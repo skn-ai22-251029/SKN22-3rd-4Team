@@ -10,15 +10,21 @@ from utils.pdf_utils import create_pdf
 def render():
     """Render Report Generator Page"""
     st.markdown('<h1 class="main-header">📊 레포트 생성</h1>', unsafe_allow_html=True)
-    st.caption("gpt-5-nano 기반 | 구조화된 투자 리서치 보고서 생성")
+    st.caption("gpt-4.1-mini 기반 | 단일 기업 분석 & 비교 분석 레포트 생성")
 
     st.markdown("---")
+
+    st.info(
+        "💡 **단일 분석**: `AAPL` 또는 `애플` | **비교 분석**: `애플, 마이크로소프트, 구글` (콤마로 구분)"
+    )
 
     col1, col2 = st.columns([3, 1])
 
     with col1:
         ticker = st.text_input(
-            "분석할 회사 티커", placeholder="AAPL, MSFT...", key="report_ticker_main"
+            "분석할 회사 (티커 또는 한글명)",
+            placeholder="애플 또는 애플, 마이크로소프트, 구글",
+            key="report_ticker_main",
         )
 
     with col2:
@@ -32,12 +38,29 @@ def render():
     if generate_btn and ticker:
         try:
             from rag.report_generator import ReportGenerator  # Lazy import
+            from src.data.supabase_client import SupabaseClient
+
+            def resolve_to_ticker(term: str) -> str:
+                """한글명이나 영문명을 티커로 변환"""
+                term = term.strip()
+                # 이미 티커 형식 (대문자 영문)이면 그대로 반환
+                if term.isupper() and term.isalpha():
+                    return term
+                # DB에서 검색
+                try:
+                    df = SupabaseClient.search_companies(term)
+                    if not df.empty:
+                        return df.iloc[0]["ticker"]
+                except:
+                    pass
+                return term.upper()  # 못 찾으면 대문자로 반환
 
             generator = ReportGenerator()
 
             # Check if multiple tickers (comma separated)
             if "," in ticker:
-                tickers = [t.strip().upper() for t in ticker.split(",") if t.strip()]
+                raw_terms = [t.strip() for t in ticker.split(",") if t.strip()]
+                tickers = [resolve_to_ticker(t) for t in raw_terms]
                 if len(tickers) > 1:
                     with st.spinner(
                         f"⚖️ {', '.join(tickers)} 비교 분석 레포트 생성 중..."
@@ -49,9 +72,10 @@ def render():
                         report = generator.generate_report(tickers[0])
                         file_prefix = f"{tickers[0]}_analysis_report"
             else:
-                with st.spinner(f"📊 {ticker.upper()} 분석 레포트 생성 중..."):
-                    report = generator.generate_report(ticker.upper())
-                    file_prefix = f"{ticker.upper()}_analysis_report"
+                resolved_ticker = resolve_to_ticker(ticker)
+                with st.spinner(f"📊 {resolved_ticker} 분석 레포트 생성 중..."):
+                    report = generator.generate_report(resolved_ticker)
+                    file_prefix = f"{resolved_ticker}_analysis_report"
 
             st.markdown("---")
             st.markdown(report)

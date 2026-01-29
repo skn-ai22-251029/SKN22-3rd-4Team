@@ -89,6 +89,45 @@ with st.sidebar.expander("⭐ 관심 기업", expanded=True):
 
     watchlist = st.session_state.watchlist
 
+    # Quick Add 기능
+    add_col1, add_col2 = st.columns([3, 1])
+    with add_col1:
+        new_ticker = st.text_input(
+            "티커 추가",
+            placeholder="AAPL",
+            label_visibility="collapsed",
+            key="sidebar_quick_add_ticker",
+        )
+    with add_col2:
+        add_clicked = st.button("➕", key="sidebar_add_btn", help="관심 기업 추가")
+
+    if add_clicked and new_ticker:
+        search_term = new_ticker.strip()
+        # DB 검증: Supabase에서 티커 또는 한글명으로 검색
+        try:
+            from src.data.supabase_client import SupabaseClient
+
+            # search_companies는 ticker, company_name, korean_name 모두 검색
+            df = SupabaseClient.search_companies(search_term)
+
+            if not df.empty:
+                # 첫 번째 결과의 티커 사용
+                found_ticker = df.iloc[0]["ticker"]
+                found_name = df.iloc[0].get("korean_name") or df.iloc[0]["company_name"]
+
+                if found_ticker not in st.session_state.watchlist:
+                    st.session_state.watchlist.append(found_ticker)
+                    st.toast(f"✅ {found_name} ({found_ticker}) 추가됨")
+                    st.rerun()
+                else:
+                    st.toast(f"⚠️ {found_name} ({found_ticker})은(는) 이미 등록됨")
+            else:
+                st.toast(f"❌ '{search_term}' 검색 결과가 없습니다")
+        except Exception as e:
+            st.toast(f"⚠️ DB 연결 오류: {str(e)[:30]}")
+
+    st.markdown("---")
+
     if watchlist:
         # 리스트 복사본으로 순회하여 삭제 시 문제 방지
         for ticker in list(watchlist):
@@ -101,7 +140,7 @@ with st.sidebar.expander("⭐ 관심 기업", expanded=True):
                     st.rerun()
         st.caption(f"총 {len(st.session_state.watchlist)}개")
     else:
-        st.caption("홈 > 기업 검색에서\n⭐ 버튼으로 추가")
+        st.caption("위 입력창에 티커를 입력하세요\n(예: AAPL, MSFT, GOOGL)")
 
 st.sidebar.markdown("---")
 

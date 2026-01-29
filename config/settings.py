@@ -45,7 +45,7 @@ class Settings(BaseSettings):
     # Model Settings (matches .env)
     EMBEDDING_MODEL: str = Field("text-embedding-3-small", env="EMBEDDING_MODEL")
     CHAT_MODEL: str = Field("gpt-4.1-mini", env="CHAT_MODEL")
-    REPORT_MODEL: str = Field("gpt-5-nano", env="REPORT_MODEL")
+    REPORT_MODEL: str = Field("gpt-4.1-mini", env="REPORT_MODEL")
     TEMPERATURE: float = Field(0.1, env="TEMPERATURE")
     MAX_TOKENS: int = Field(4096, env="MAX_TOKENS")
 
@@ -75,13 +75,17 @@ class Settings(BaseSettings):
             "ignore"  # Ignore extra fields from .env that aren't defined in Settings
         )
 
+    def ensure_directories(self):
+        """Create necessary directories (call on demand, not at module load)"""
+        self.RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        self.PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
+        self.VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)
+        self.TEN_K_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+        self.MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 # Global settings instance
 settings = Settings()
 
-# Ensure directories exist
-settings.RAW_DATA_DIR.mkdir(parents=True, exist_ok=True)
-settings.PROCESSED_DATA_DIR.mkdir(parents=True, exist_ok=True)
-settings.VECTOR_STORE_DIR.mkdir(parents=True, exist_ok=True)
-settings.TEN_K_DOCS_DIR.mkdir(parents=True, exist_ok=True)
-settings.MODELS_DIR.mkdir(parents=True, exist_ok=True)
+# NOTE: Directory creation moved to settings.ensure_directories()
+# for faster app startup. Call settings.ensure_directories() when needed.

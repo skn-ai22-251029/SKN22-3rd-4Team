@@ -1,6 +1,6 @@
 """
 Report Generator - 구조화된 투자 분석 레포트 생성
-Uses gpt-5-nano
+Uses gpt-4.1-mini
 """
 
 import os

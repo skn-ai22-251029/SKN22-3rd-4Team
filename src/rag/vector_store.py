@@ -57,12 +57,16 @@ class VectorStore:
 
     def _get_embedding(self, text: str) -> List[float]:
         """Generate embedding for a single text"""
-        response = self.openai_client.embeddings.create(model=self.embedding_model, input=text)
+        response = self.openai_client.embeddings.create(
+            model=self.embedding_model, input=text
+        )
         return response.data[0].embedding
 
     def _get_embeddings(self, texts: List[str]) -> List[List[float]]:
         """Generate embeddings for multiple texts"""
-        response = self.openai_client.embeddings.create(model=self.embedding_model, input=texts)
+        response = self.openai_client.embeddings.create(
+            model=self.embedding_model, input=texts
+        )
         return [item.embedding for item in response.data]
 
     def add_documents(self, documents: List[Dict], batch_size: int = 100) -> int:
@@ -130,8 +134,14 @@ class VectorStore:
             query_embedding = self._get_embedding(query)
 
             # Call the match_documents function in Supabase
+            # Note: Adding match_threshold to disambiguate function overload
             response = self.supabase.rpc(
-                "match_documents", {"query_embedding": query_embedding, "match_count": k}
+                "match_documents",
+                {
+                    "query_embedding": query_embedding,
+                    "match_count": k,
+                    "match_threshold": 0.5,  # Minimum similarity threshold
+                },
             ).execute()
 
             # Format results
@@ -168,14 +178,20 @@ class VectorStore:
         results = self.similarity_search(query, k * 2)
 
         # Filter by company ticker in metadata
-        filtered = [doc for doc in results if doc.get("metadata", {}).get("ticker") == company]
+        filtered = [
+            doc for doc in results if doc.get("metadata", {}).get("ticker") == company
+        ]
 
         return filtered[:k]
 
     def get_stats(self) -> Dict:
         """Get statistics about the table"""
         try:
-            response = self.supabase.table(self.table_name).select("id", count="exact").execute()
+            response = (
+                self.supabase.table(self.table_name)
+                .select("id", count="exact")
+                .execute()
+            )
             count = response.count if response.count else 0
         except Exception:
             count = "Unknown"
