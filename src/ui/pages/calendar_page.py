@@ -61,19 +61,57 @@ def render():
         )
 
     with col2:
-        selected_quarter_str = st.radio(
-            "분기 선택",
-            options=[
-                "1분기 (1~3월)",
-                "2분기 (4~6월)",
-                "3분기 (7~9월)",
-                "4분기 (10~12월)",
-            ],
-            index=current_q - 1,
-            horizontal=True,
-            key="calendar_quarter_radio",
-        )
-        selected_quarter_idx = int(selected_quarter_str[0])
+        # Session state에서 선택된 분기 가져오기 (초기값: 현재 분기)
+        if "selected_quarter_idx" not in st.session_state:
+            st.session_state.selected_quarter_idx = current_q
+        
+        st.markdown("**분기 선택**")
+        
+        # 4개 분기 버튼을 columns에 배치
+        quarter_cols = st.columns(4)
+        quarters = [
+            ("1분기\n(1~3월)", 1),
+            ("2분기\n(4~6월)", 2),
+            ("3분기\n(7~9월)", 3),
+            ("4분기\n(10~12월)", 4),
+        ]
+        
+        for col, (label, q_num) in zip(quarter_cols, quarters):
+            with col:
+                is_selected = st.session_state.selected_quarter_idx == q_num
+                
+                if is_selected:
+                    # 선택된 분기: 배경색 있는 박스로 표시
+                    st.markdown(
+                        f"""
+                        <div style="
+                            background: linear-gradient(135deg, #FF6B6B 0%, #FF5252 100%);
+                            color: white;
+                            padding: 16px 12px;
+                            border-radius: 8px;
+                            text-align: center;
+                            font-weight: bold;
+                            font-size: 14px;
+                            border: 2px solid #FF4444;
+                            box-shadow: 0 4px 8px rgba(255, 107, 107, 0.3);
+                        ">
+                            {label}
+                        </div>
+                        """,
+                        unsafe_allow_html=True
+                    )
+                else:
+                    # 선택되지 않은 분기: 클릭 가능한 버튼
+                    if st.button(
+                        label,
+                        key=f"quarter_{q_num}",
+                        use_container_width=True,
+                        help=f"{label} 선택"
+                    ):
+                        st.session_state.selected_quarter_idx = q_num
+                        st.rerun()
+        
+        selected_quarter_idx = st.session_state.selected_quarter_idx
 
     # 날짜 계산
     q_map = {
