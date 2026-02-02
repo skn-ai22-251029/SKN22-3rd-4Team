@@ -1,6 +1,6 @@
 import streamlit as st
 import time
-from src.data.supabase_client import SupabaseClient
+from data.supabase_client import SupabaseClient
 
 
 def render():

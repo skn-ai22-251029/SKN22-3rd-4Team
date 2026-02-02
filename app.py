@@ -66,7 +66,7 @@ if "is_logged_in" not in st.session_state:
     st.session_state.user = None
 
 if not st.session_state.is_logged_in:
-    import src.ui.pages.login_page as login_page
+    import ui.pages.login_page as login_page
 
     login_page.render()
     st.stop()  # 로그인 전에는 메인 앱 실행 중단
@@ -120,10 +120,7 @@ if selected_page in pages:
 
         # ui.pages가 src 패키지 아래에 있으므로 경로 조정이 필요할 수 있음
         # sys.path에 src가 이미 추가되어 있으므로 바로 import 가능
-        if module_path.startswith("ui."):
-            page_module = importlib.import_module(f"src.{module_path}")
-        else:
-            page_module = importlib.import_module(module_path)
+        page_module = importlib.import_module(module_path)
 
         if hasattr(page_module, "render"):
             page_module.render()
