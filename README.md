@@ -6,14 +6,91 @@
 
 미국 상장 기업의 방대한 재무 데이터와 시장 정보를 AI로 분석하여, 투자자에게 실질적인 인사이트를 제공하는 대화형 플랫폼을 구축합니다.
 
+## 🙋‍♂️ 팀 구성
+
+- 안민제, 이신재, 이병재, 장완식
+
 ### 핵심 기능
 
 1. **💬 AI Financial Analyst**: Finnhub 실시간 데이터와 내부 재무 DB를 결합한 RAG 챗봇 (병렬 수집 최적화로 빠른 응답)
 2. **📝 투자 리포트 + 주가 차트**: 단일/비교 분석 레포트 생성 + 3개월 주가 추이 차트 (`gpt-4.1-mini`, 한글명 검색)
-3. **🌐 GraphRAG**: 기업 간 공급망/경쟁 관계 분석 및 시각화
-4. **📈 한국형 마켓 대시보드**: KST 기준 실시간 원화(KRW) 환율 및 주요 지표 제공
-5. **⭐ 사이드바 관심기업 Quick Add**: 어디서든 티커/한글명으로 즐겨찾기 추가 (DB 검증)
-6. **🔍 Text-to-SQL**: 자연어 질의를 통한 복잡한 재무 재표 검색
+3. **📈 한국형 마켓 대시보드**: KST 기준 실시간 원화(KRW) 환율 및 주요 지표 제공
+4. **⭐ 사이드바 관심기업 Quick Add**: 어디서든 티커/한글명으로 즐겨찾기 추가 (DB 검증)
+5. **🔍 Text-to-SQL**: 자연어 질의를 통한 복잡한 재무 재표 검색
+---
+
+## 🏗️ 시스템 아키텍처
+
+```mermaid
+graph TD
+    User([👤 사용자]) -->|Interact| UI[💻 Streamlit Web App]
+    
+    subgraph Frontend Logic
+        UI -->|Chat Query| Validator[🛡️ Input Validator]
+        UI -->|Report Request| ReportGen[📝 Report Generator]
+    end
+
+    subgraph RAG Engine
+        Validator -->|Valid Query| Agent[🤖 LangChain Agent]
+        ReportGen -->|Data Fetch| Retriever[🔍 Data Retriever]
+        
+        Agent <-->|Vector Search| VectorDB[(🗄️ Supabase Vector)]
+        Agent <-->|Graph Search| GraphDB[(🕸️ GraphRAG)]
+        
+        Retriever -->|Parallel Fetch| VectorDB
+        Retriever -->|Parallel Fetch| GraphDB
+    end
+
+    subgraph Data Sources
+        Retriever -->|Live Price/News| Finnhub[📡 Finnhub API]
+        Retriever -->|Market Info| Yahoo[📈 yfinance API]
+        Retriever -->|Unknown Ticker| Tavily[🕵️ Tavily Search]
+        VectorDB <-->|Sync| SEC[📄 SEC 10-K/10-Q]
+    end
+
+    Retriever -->|Aggregated Context| LLM[🧠 GPT-4.1-mini]
+    Agent -->|Final Answer| LLM
+    LLM -->|Response| UI
+```
+
+---
+## 📚 기술 스택
+
+![Python](https://img.shields.io/badge/Python-%233776AB.svg?style=for-the-badge&logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/Streamlit-%23FF4B4B.svg?style=for-the-badge&logo=streamlit&logoColor=white)
+![LangChain](https://img.shields.io/badge/LangChain-%23000000.svg?style=for-the-badge&logo=langchain&logoColor=white)
+![LangGraph](https://img.shields.io/badge/LangGraph-%23000000.svg?style=for-the-badge&logo=langgraph&logoColor=white)
+![OpenAI](https://img.shields.io/badge/OpenAI-%23412991.svg?style=for-the-badge&logo=openai&logoColor=white)
+![Supabase](https://img.shields.io/badge/Supabase-%233ECF8E.svg?style=for-the-badge&logo=supabase&logoColor=white)
+![Finnhub](https://img.shields.io/badge/Finnhub-%2300C7B7.svg?style=for-the-badge&logo=finnhub&logoColor=white)
+![yfinance](https://img.shields.io/badge/yfinance-%23F7CA18.svg?style=for-the-badge&logo=finance&logoColor=black)
+![NetworkX](https://img.shields.io/badge/NetworkX-%23F9A825.svg?style=for-the-badge&logo=networkx&logoColor=white)
+![Plotly](https://img.shields.io/badge/Plotly-%233F4F75.svg?style=for-the-badge&logo=plotly&logoColor=white)
+![ReportLab](https://img.shields.io/badge/ReportLab-%23555555.svg?style=for-the-badge&logo=reportlab&logoColor=white)
+![APScheduler](https://img.shields.io/badge/APScheduler-%238A2BE2.svg?style=for-the-badge&logo=apscheduler&logoColor=white)
+![lxml](https://img.shields.io/badge/lxml-%23CCCCCC.svg?style=for-the-badge&logo=lxml&logoColor=black)
+![Tavily](https://img.shields.io/badge/Tavily-%23007BFF.svg?style=for-the-badge&logo=tavily&logoColor=white)
+
+---
+
+## 📸 주요 기능 및 실행 화면
+
+### 1. 📊 메인 대시보드 (Home)
+KST 기준 실시간 환율 정보와 관심 기업(Watchlist)을 한눈에 확인할 수 있습니다.
+![Main Dashboard](./docs/images/dashboard_preview.png)
+
+### 2. 💬 AI 애널리스트 채팅 (RAG Chatbot)
+재무제표 DB와 실시간 뉴스 데이터를 기반으로 사용자의 투자 질문에 답변합니다. (출처 포함)
+![Chat Interface](./docs/images/chat_preview.png)
+
+### 3. 📝 심층 투자 리포트 (Report Generator)
+단일 기업 분석부터 다중 기업 비교까지, 전문가 수준의 PDF 리포트를 원클릭으로 생성합니다.
+- **특징**: 주가 차트, 거래량, 재무 지표 시각화 포함
+![Report Sample](./docs/images/report_preview.png)
+
+### 4. 🔍 지능형 티커 검색
+"아이폰"을 검색하면 모기업 "AAPL"를 찾아주는 인공지능 검색 기능을 제공합니다.
+![Search Demo](./docs/images/search_preview.png)
 
 ---
 
@@ -27,7 +104,7 @@
 
 ### Phase 2: 데이터 파이프라인 ✅ 완료
 
-- [x] **Supabase**: 103개 주요 기업 재무 데이터(10-K, 10-Q) DB 구축
+- [x] **Supabase**: 503개 주요 기업 재무 데이터(10-K, 10-Q) DB 구축
 - [x] **Finnhub API**: 실시간 주가, 뉴스, 컨센서스 데이터 연동
 - [x] **Exchange API**: KST 기준 실시간 원화 환율 연동 완료
 
@@ -55,14 +132,15 @@
 
 ```text
 SKN22-3rd-4Team/
-├── app.py                    # Main App
-├── models/
-│   └── settings.py           # AI Model Configs
+├── app.py                    # Main Entory Point
+├── config/                   # Global Settings
 ├── src/
-│   ├── data/                 # Stock API (Finnhub + yfinance) & Supabase Clients
-│   ├── rag/                  # Analyst Chat, Report Gen, GraphRAG
-│   ├── ui/                   # Streamlit Pages
-│   └── utils/
+│   ├── core/                 # Core Logic (Validator)
+│   ├── data/                 # API Clients (Finnhub, Supabase)
+│   ├── rag/                  # RAG Engine (Chat, Report, Graph)
+│   ├── tools/                # Agent Tools
+│   ├── ui/                   # Streamlit Pages & Helpers
+│   └── utils/                # Utilities (Charts, PDF)
 └── .env                      # API Keys
 ```
 
@@ -109,6 +187,39 @@ streamlit run app.py
 
 ---
 
-## 📝 라이선스
+## 🛠️ 트러블슈팅 및 기술적 도전
 
+> ### ⚡ Challenge: LLM의 티커(Ticker) 환각(Hallucination) 문제
+
+**문제 상황 (Problem):**
+사용자가 "액티비전" 같은 기업명/관련 검색어를 입력했을 때, LLM이 이미 상장 폐지된 티커(`ATVI`)나 엉뚱한 티커를 반환하여 데이터 조회 에러가 발생했습니다.
+(참고: 액티비전 블리자드는 마이크로소프트에 인수합병되어 MSFT로 변경되었습니다)
+
+**해결 과정 (Solution):**
+1. **DB 기반 자동완성**: 1차적으로 내부 DB(`companies` 테이블)와 매핑된 키워드로 빠르고 정확한 자동완성을 제공했습니다.
+2. **지능형 웹 검색 (Agent Fallback)**: DB에 없는 키워드("액티비전" 등)가 입력되면, **Tavily Search API**를 활용한 에이전트가 실시간으로 웹을 검색합니다.
+   - *"이 키워드를 만든 회사의 현재 상장 티커는 무엇인가?"*
+   - *"혹시 인수합병(M&A)되었는가?"* (예: 액티비전 블리자드(ATVI) -> MSFT)
+3. **사용자 피드백 루프**: 시스템이 티커를 대체할 경우, UI에 **"이유(Reason)"**를 명시하여 사용자의 혼란을 방지했습니다.
+
+**결과 (Impact):**
+- 정확하지 않은 티커로 인한 크래시 **<1%**
+- "오버워치" 같은 게임 이름이나, "Windows" 같은 OS 이름으로도 모기업(MSFT) 분석이 가능한 **유연한 검색 경험** 구현
+
+> ### ⚡ Challenge: finnhub api의 요청 횟수 제한으로 인한 데이터 수집 실패 문제와 데이터 수집 속도 문제
+
+**문제 상황 (Problem):**
+Finnhub API는 무료 플랜에서는 일일 요청 횟수에 제한이 있습니다. 이로 인해 여러 기업의 데이터를 동시에 수집하거나, 사용자가 여러 번 요청을 보낼 경우 데이터 수집이 실패하는 문제가 발생했습니다. 또한, Finnhub API의 응답 속도가 느려 데이터 수집 시간이 오래 걸리는 문제가 있었습니다.
+
+**해결 과정 (Solution):**
+1. **병렬 수집 최적화**: `DataRetriever` 클래스를 도입하여 여러 기업의 데이터를 동시에 수집할 수 있도록 개선했습니다. 이를 통해 API 요청 횟수를 줄이고 데이터 수집 속도를 높였습니다.
+2. **Fallback 메커니즘**: Finnhub API에서 데이터를 가져오지 못할 경우, `yfinance` 라이브러리를 사용하여 대체 데이터를 수집하도록 구현했습니다. 이를 통해 데이터 수집 실패율을 낮추고 사용자 경험을 개선했습니다.
+
+**결과 (Impact):**
+- Fallback 메커니즘으로 데이터 수집 실패율 감소
+- 데이터 병렬 수집으로 데이터 수집 속도 향상
+
+---
+
+## 📝 라이선스
 MIT License
