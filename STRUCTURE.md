@@ -34,8 +34,13 @@ c:\Workspaces\SKN22-3rd-4Team
 │   ├── sp500_scheduler.py             # 정기 수집 스케줄러
 │   ├── update_existing_companies.py   # 기 존재 기업 최신화
 │   ├── upload_relationships_to_supabase.py # 관계 데이터 DB 업로드
-│   └── upload_to_supabase.py          # 범용 데이터 DB 업로드
-└── src/                  # 애플리케이션 핵심 소스 코드
+├── 03_test_report/           # 테스트 자동화 및 모델 평가 결과
+│   ├── data/                 # 평가용 데이터셋 및 Ragas 결과 CSV
+│   ├── docs/                 # 테스트 가이드 및 보고서 템플릿
+│   ├── evaluate_rag.py       # RAG 모델 성능 평가 스크립트
+│   ├── generate_dataset.py   # 평가용 골든 데이터셋 생성 스크립트
+│   └── generate_report_summary.py # 테스트 결과 요약 생성 스크립트
+└── src/                      # 애플리케이션 핵심 소스 코드
     ├── core/             # 코어 비즈니스 로직
     │   ├── chat_connector.py          # LLM 채팅 핸들러
     │   └── input_validator.py         # 사용자 입력 검증기

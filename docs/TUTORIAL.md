@@ -270,9 +270,14 @@ SKN22-3rd-4Team/
 │       ├── pdf_utils.py      # PDF 생성
 │       └── plotly_charts.py  # 웹 차트 (Plotly)
 │
+├── 03_test_report/           # ✅ 테스트 및 모델 평가 산출물
+│   ├── data/                 # Ragas 평가 결과 데이터 (CSV)
+│   ├── docs/                 # 테스트 보고서 및 가이드
+│   └── evaluate_rag.py       # 평가 실행 스크립트
+│
 ├── fonts/                    # 폰트 파일
 ├── docs/                     # 문서
-└── tests/                    # 테스트
+└── tests/                    # 유닛 테스트
 ```
 
 ---

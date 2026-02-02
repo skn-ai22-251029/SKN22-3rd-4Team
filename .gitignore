@@ -55,7 +55,6 @@ data/processed/*
 !data/processed/.gitkeep
 data/vector_store/*
 !data/vector_store/.gitkeep
-*.csv
 *.xlsx
 *.xls
 *.parquet
@@ -92,12 +91,6 @@ htmlcov/
 
 # Streamlit
 .streamlit/
-
-# Neo4j
-.neo4j/
-
-# ChromaDB
-chroma/
 
 # Fonts (users should download separately)
 fonts/*.ttf
