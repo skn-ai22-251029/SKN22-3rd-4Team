@@ -1,6 +1,6 @@
 import streamlit as st
 import logging
-from src.data.supabase_client import SupabaseClient
+from data.supabase_client import SupabaseClient
 
 logger = logging.getLogger(__name__)
 
@@ -61,24 +61,36 @@ def render_watchlist_sidebar():
 
     st.markdown("---")
 
-    # 4. List UI
+    # 4. List UI (List Layout)
     if watchlist:
+        st.markdown("##### ⭐ 관심 기업")
         for ticker in list(watchlist):
             col1, col2 = st.columns([3, 1])
             with col1:
-                st.markdown(f"📈 {ticker}")
+                st.markdown(f"📈 **{ticker}**")
             with col2:
-                # Remove Button
-                if st.button("x", key=f"sidebar_rm_{ticker}", help="제거"):
+                if st.button("x", key=f"sidebar_rm_{ticker}", help=f"{ticker} 삭제"):
                     try:
+                        success = True
                         if st.session_state.user:
-                            SupabaseClient.remove_favorite(
-                                st.session_state.user["id"], ticker
+                            user_id = st.session_state.user["id"]
+                            logger.info(
+                                f"Removing favorite: User={user_id}, Ticker={ticker}"
                             )
-                        st.session_state.watchlist.remove(ticker)
-                        st.rerun()
+                            success, error_msg = SupabaseClient.remove_favorite(
+                                user_id, ticker
+                            )
+                            if not success:
+                                st.toast(f"❌ DB 삭제 실패: {error_msg}")
+                                logger.error(f"DB Delete Failed: {error_msg}")
+
+                        if success:
+                            st.session_state.watchlist.remove(ticker)
+                            st.rerun()
                     except Exception as e:
-                        st.toast(f"삭제 실패: {e}")
+                        st.toast(f"삭제 오류: {e}")
+                        logger.error(f"Remove Error: {e}")
+
         st.caption(f"총 {len(watchlist)}개")
     else:
         st.caption("위 입력창에 기업명/티커를 입력하세요\n(예: 애플, MSFT)")

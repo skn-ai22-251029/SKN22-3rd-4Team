@@ -251,12 +251,23 @@ class SupabaseClient:
         """관심 기업 제거"""
         client = cls.get_client()
         try:
-            client.table("favorites").delete().eq("user_id", user_id).eq(
-                "ticker", ticker
-            ).execute()
-            return True
-        except Exception:
-            return False
+            # delete()는 삭제된 행을 반환함
+            response = (
+                client.table("favorites")
+                .delete()
+                .eq("user_id", user_id)
+                .eq("ticker", ticker)
+                .execute()
+            )
+
+            # 삭제된 데이터가 있는지 확인
+            if response.data and len(response.data) > 0:
+                return True, None
+            else:
+                return False, "삭제할 데이터가 없거나 권한이 없습니다."
+        except Exception as e:
+            print(f"Delete Error: {e}")  # Debug print
+            return False, str(e)
 
     @classmethod
     def get_favorites(cls, user_id):

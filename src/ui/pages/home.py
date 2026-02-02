@@ -130,7 +130,7 @@ def _get_cached_top_revenue_companies(supabase_client, year=2024, limit=20):
 @st.cache_data(ttl=3600)
 def _get_cached_exchange_rates():
     """환율 정보 캐싱 (1시간)"""
-    from src.tools.exchange_rate_client import get_exchange_client
+    from tools.exchange_rate_client import get_exchange_client
 
     try:
         client = get_exchange_client()
@@ -145,7 +145,7 @@ def render():
 
     # Lazy Imports
     try:
-        from src.data.supabase_client import (
+        from data.supabase_client import (
             SupabaseClient,
             get_companies,
             get_top_revenue_companies,
@@ -156,7 +156,7 @@ def render():
         SUPABASE_AVAILABLE = False
 
     try:
-        from src.tools.exchange_rate_client import get_exchange_client
+        from tools.exchange_rate_client import get_exchange_client
 
         EXCHANGE_AVAILABLE = True
     except ImportError:
@@ -196,15 +196,30 @@ def render():
     # 관심 기업 섹션 (있을 때만 표시)
     if st.session_state.watchlist:
         st.markdown("### ⭐ 관심 기업")
-        cols = st.columns(min(len(st.session_state.watchlist), 6))
-        for i, ticker in enumerate(st.session_state.watchlist[:6]):
-            with cols[i]:
-                if st.button(f"🗑️ {ticker}", key=f"home_rm_{ticker}", help="제거"):
-                    st.session_state.watchlist.remove(ticker)
-                    st.rerun()
+        # 왼쪽 정렬을 위해 넉넉한 컬럼 수 사용
+        cols = st.columns(8)
+        for i, ticker in enumerate(st.session_state.watchlist):
+            if i < 8:  # 최대 8개까지만 한 줄에 표시 (더 많으면 ... 처리)
+                with cols[i]:
+                    if st.button(f"🗑️ {ticker}", key=f"home_rm_{ticker}", help="제거"):
+                        # DB 삭제 로직 추가
+                        try:
+                            success = True
+                            if st.session_state.user:
+                                success, _ = SupabaseClient.remove_favorite(
+                                    st.session_state.user["id"], ticker
+                                )
 
-        if len(st.session_state.watchlist) > 6:
-            st.caption(f"... +{len(st.session_state.watchlist) - 6}개 더")
+                            if success:
+                                st.session_state.watchlist.remove(ticker)
+                                st.rerun()
+                            else:
+                                st.error("삭제 실패")
+                        except Exception:
+                            st.error("삭제 오류")
+
+        if len(st.session_state.watchlist) > 8:
+            st.caption(f"... +{len(st.session_state.watchlist) - 8}개 더")
         st.markdown("---")
 
     # 메트릭 카드 - 동적 데이터
@@ -305,7 +320,7 @@ def render():
 
 def _render_top_companies_tab(supabase_available: bool, company_count: int):
     """매출 상위 기업 탭"""
-    from src.data.supabase_client import get_top_revenue_companies
+    from data.supabase_client import get_top_revenue_companies
 
     st.markdown("### 📊 2024년 매출 상위 20개 기업")
 
