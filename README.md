@@ -6,9 +6,14 @@
 
 미국 상장 기업의 방대한 재무 데이터와 시장 정보를 AI로 분석하여, 투자자에게 실질적인 인사이트를 제공하는 대화형 플랫폼을 구축합니다.
 
-## 🙋‍♂️ 팀 구성
+## 🙋‍♂️ 프로젝트 팀 구성 (Team Composition)
 
-- 안민제, 이신재, 이병재, 장완식
+| Role & Name | Responsibilities |
+| :--- | :--- |
+| **이병재 (Team Leader)**<br><sub>PM / ARCHITECTURE / DB</sub><br>[@PracLee](https://github.com/PracLee) | • 프로젝트 기획 및 전체 구조(Architecture) 설계<br>• 재무 데이터베이스(DB) 모델링 및 설계<br>• 챗봇 추천 검색어 로직 구현<br>• 단위/통합 테스트 주도 및 품질 관리 |
+| **장완식 (Core Dev)**<br><sub>RAG PIPELINE / UI/UX</sub><br>[@JangWS1030](https://github.com/JangWS1030) | • RAG 파이프라인(Chatbot) 핵심 로직 구현<br>• 로그인/인증 시스템 및 즐겨찾기 기능 개발<br>• DB 현황 모니터링 UI 및 PDF 리포트 수정<br>• 전반적인 UI/UX 개선 및 고도화 |
+| **안민제 (Feature Dev)**<br><sub>SEARCH / QA / DOCS</sub><br>[@minje0209-ux](https://github.com/minje0209-ux) | • 챗봇 검색어 자동완성 알고리즘 구현<br>• 추천 검색어 기능 고도화<br>• 프로젝트 최종 검토(Final Review) 및 QA<br>• README.md 작성 및 기술 문서화 |
+| **이신재 (Frontend / QA)**<br><sub>TESTING / UI REFINEMENT</sub><br>[@Codingcooker74](https://github.com/Codingcooker74) | • 주요 기능 단위 테스트(Unit Test) 수행<br>• 사용자 인터페이스(UI) 오류 수정 및 폴리싱<br>• 반응형 레이아웃 최적화 지원 |
 
 ### 핵심 기능
 
@@ -160,7 +165,7 @@ pip install -r requirements.txt
 ```
 
 ### 2. 환경 변수 설정 (.env)
-
+```
 OPENAI_API_KEY=sk-...
 SUPABASE_URL=https://...
 SUPABASE_KEY=eyJ...
@@ -169,8 +174,7 @@ TAVILY_API_KEY=...
 ```
 
 ### 3. 앱 실행
-streamlit run app.py
-```
+> streamlit run app.py
 
 ---
 
