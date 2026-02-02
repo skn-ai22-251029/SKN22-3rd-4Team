@@ -1,21 +1,24 @@
 import streamlit as st
 import time
-from datetime import datetime, timedelta
+import json
+from datetime import datetime
 from data.supabase_client import SupabaseClient
+from streamlit_javascript import st_javascript
+
+
+def save_session_to_local_storage(email: str, user_id: str):
+    """JavaScript를 사용하여 localStorage에 세션 저장"""
+    session_data = {
+        "email": email,
+        "id": user_id,
+        "timestamp": datetime.now().isoformat()
+    }
+    session_json = json.dumps(session_data)
+    st_javascript(f"localStorage.setItem('stock_bot_session', '{session_json}')")
 
 
 def render(cookie_manager=None):
     """로그인 및 회원가입 페이지"""
-    import json
-
-    # 쿠키 매니저가 전달되지 않았을 경우 (비상용)
-    if cookie_manager is None:
-        try:
-            import extra_streamlit_components as stx
-
-            cookie_manager = stx.CookieManager(key="login_cookie_manager")
-        except Exception:
-            pass
 
     # CSS 로드
     st.markdown(
@@ -68,17 +71,11 @@ def render(cookie_manager=None):
                                 st.session_state.user = result["user"]
                                 st.session_state.is_logged_in = True
 
-                                # 쿠키 설정 (JSON으로 통합하여 한 번만 호출)
-                                if cookie_manager:
-                                    session_data = {
-                                        "email": email,
-                                        "id": result["user"]["id"],
-                                    }
-                                    cookie_manager.set(
-                                        "session_data",
-                                        json.dumps(session_data),
-                                        expires_at=datetime.now() + timedelta(days=7),
-                                    )
+                                # localStorage에 세션 저장
+                                save_session_to_local_storage(
+                                    email=email,
+                                    user_id=result["user"]["id"]
+                                )
 
                                 # 관심 기업 로드
                                 favorites = SupabaseClient.get_favorites(
@@ -97,7 +94,7 @@ def render(cookie_manager=None):
                 reg_password = st.text_input(
                     "비밀번호",
                     type="password",
-                    help="보안을 위해 복잡한 비밀번호를 사용하세요.",
+                    help="최소 6자 이상 입력해주세요.",
                     key="reg_pw",
                 )
                 reg_password_confirm = st.text_input(
@@ -108,6 +105,8 @@ def render(cookie_manager=None):
                 if submit_reg:
                     if not reg_email or not reg_password:
                         st.error("이메일과 비밀번호를 입력해주세요.")
+                    elif len(reg_password) < 6:
+                        st.error("비밀번호는 최소 6자 이상이어야 합니다.")
                     elif reg_password != reg_password_confirm:
                         st.error("비밀번호가 일치하지 않습니다.")
                     else:

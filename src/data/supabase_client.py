@@ -236,6 +236,69 @@ class SupabaseClient:
             return {"success": False, "message": str(e)}
 
     @classmethod
+    def change_password(cls, user_id: str, current_password: str, new_password: str):
+        """비밀번호 변경"""
+        client = cls.get_client()
+        try:
+            # 1. 현재 비밀번호 확인
+            current_hash = hashlib.sha256(current_password.encode()).hexdigest()
+            user = (
+                client.table("users")
+                .select("*")
+                .eq("id", user_id)
+                .eq("password_hash", current_hash)
+                .execute()
+            )
+            
+            if not user.data:
+                return {"success": False, "message": "현재 비밀번호가 일치하지 않습니다."}
+            
+            # 2. 새 비밀번호 해싱 및 업데이트
+            new_hash = hashlib.sha256(new_password.encode()).hexdigest()
+            result = (
+                client.table("users")
+                .update({"password_hash": new_hash})
+                .eq("id", user_id)
+                .execute()
+            )
+            
+            if result.data:
+                return {"success": True, "message": "비밀번호가 변경되었습니다."}
+            return {"success": False, "message": "비밀번호 변경 실패"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @classmethod
+    def delete_user(cls, user_id: str, password: str):
+        """회원 탈퇴 - 사용자 및 관련 데이터 삭제"""
+        client = cls.get_client()
+        try:
+            # 1. 비밀번호 확인
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            user = (
+                client.table("users")
+                .select("*")
+                .eq("id", user_id)
+                .eq("password_hash", password_hash)
+                .execute()
+            )
+            
+            if not user.data:
+                return {"success": False, "message": "비밀번호가 일치하지 않습니다."}
+            
+            # 2. 관심 기업 데이터 삭제
+            client.table("favorites").delete().eq("user_id", user_id).execute()
+            
+            # 3. 사용자 삭제
+            result = client.table("users").delete().eq("id", user_id).execute()
+            
+            if result.data:
+                return {"success": True, "message": "회원 탈퇴가 완료되었습니다."}
+            return {"success": False, "message": "회원 탈퇴 실패"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @classmethod
     def add_favorite(cls, user_id, ticker):
         """관심 기업 추가"""
         client = cls.get_client()

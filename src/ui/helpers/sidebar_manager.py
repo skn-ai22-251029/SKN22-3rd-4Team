@@ -5,6 +5,90 @@ from data.supabase_client import SupabaseClient
 logger = logging.getLogger(__name__)
 
 
+@st.dialog("👤 회원정보 관리")
+def user_settings_dialog():
+    """회원정보 관리 팝업 (비밀번호 변경, 회원 탈퇴, 로그아웃)"""
+    user_email = st.session_state.user.get("email", "")
+    st.write(f"📧 **{user_email}**")
+    st.markdown("---")
+    
+    tab1, tab2, tab3 = st.tabs(["🔑 비밀번호 변경", "🗑️ 회원 탈퇴", "🚪 로그아웃"])
+    
+    with tab1:
+        with st.form("change_password_form"):
+            current_pw = st.text_input("현재 비밀번호", type="password", key="current_pw")
+            new_pw = st.text_input("새 비밀번호", type="password", key="new_pw")
+            new_pw_confirm = st.text_input("새 비밀번호 확인", type="password", key="new_pw_confirm")
+            submit_pw = st.form_submit_button("변경", type="primary", use_container_width=True)
+            
+            if submit_pw:
+                if not current_pw or not new_pw or not new_pw_confirm:
+                    st.error("모든 필드를 입력해주세요.")
+                elif new_pw != new_pw_confirm:
+                    st.error("새 비밀번호가 일치하지 않습니다.")
+                elif len(new_pw) < 6:
+                    st.error("비밀번호는 최소 6자 이상이어야 합니다.")
+                else:
+                    user_id = st.session_state.user.get("id")
+                    result = SupabaseClient.change_password(user_id, current_pw, new_pw)
+                    if result["success"]:
+                        st.success(result["message"])
+                    else:
+                        st.error(result["message"])
+    
+    with tab2:
+        st.warning("⚠️ 탈퇴 시 모든 데이터가 삭제되며 복구할 수 없습니다.")
+        with st.form("delete_account_form"):
+            delete_pw = st.text_input("비밀번호 확인", type="password", key="delete_pw")
+            submit_delete = st.form_submit_button("회원 탈퇴", type="primary", use_container_width=True)
+            
+            if submit_delete:
+                if not delete_pw:
+                    st.error("비밀번호를 입력해주세요.")
+                else:
+                    user_id = st.session_state.user.get("id")
+                    result = SupabaseClient.delete_user(user_id, delete_pw)
+                    
+                    if result["success"]:
+                        st.session_state.is_logged_in = False
+                        st.session_state.user = None
+                        st.session_state.watchlist = []
+                        st.session_state.just_logged_out = True
+                        
+                        from streamlit.components.v1 import html
+                        html("""
+                        <script>
+                            localStorage.removeItem('stock_bot_session');
+                            window.top.location.reload();
+                        </script>
+                        """, height=0, width=0)
+                    else:
+                        st.error(result["message"])
+    
+    with tab3:
+        st.info("로그아웃하면 세션이 종료됩니다.")
+        if st.button("🚪 로그아웃", use_container_width=True):
+            st.session_state.is_logged_in = False
+            st.session_state.user = None
+            st.session_state.watchlist = []
+            st.session_state.just_logged_out = True
+            
+            from streamlit.components.v1 import html
+            html("""
+            <script>
+                localStorage.removeItem('stock_bot_session');
+                window.top.location.reload();
+            </script>
+            """, height=0, width=0)
+
+
+def render_user_settings_button():
+    """사이드바에 회원정보관리 버튼 렌더링"""
+    st.sidebar.markdown("---")
+    if st.sidebar.button("👤 회원정보 관리", use_container_width=True):
+        user_settings_dialog()
+
+
 def render_sidebar_status():
     """스케줄러 상태 및 기본 정보 표시 (placeholder if needed)"""
     pass  # app.py에서 scheduler status를 이미 처리하고 있을 수 있음. 확인 필요.
