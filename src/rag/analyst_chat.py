@@ -650,6 +650,7 @@ class AnalystChatbot(RAGBase):
                 "tickers": tickers,
                 "chart_data": chart_data,
                 "recommendations": recommendations,  # 추천 질문 포함
+                "context": context,  # 평가를 위한 컨텍스트 포함
             }
 
         except Exception as e:
