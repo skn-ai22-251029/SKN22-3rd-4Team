@@ -27,7 +27,7 @@ class AnalystChatbot(RAGBase):
 
     def __init__(self):
         """Initialize chatbot inheriting from RAGBase"""
-        super().__init__(model_name="gpt-4o-mini")
+        super().__init__(model_name="gpt-4.1-mini")
 
         # Exchange rate client (Special for Chatbot)
         self.exchange_client = None
@@ -181,7 +181,7 @@ class AnalystChatbot(RAGBase):
         """Extract company tickers from user query using LLM"""
         try:
             response = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {
                         "role": "system",
@@ -267,7 +267,7 @@ class AnalystChatbot(RAGBase):
         # 3. Fallback to LLM
         try:
             resp = self.openai_client.chat.completions.create(
-                model="gpt-4o-mini",
+                model="gpt-4.1-mini",
                 messages=[
                     {
                         "role": "system",
@@ -319,7 +319,7 @@ class AnalystChatbot(RAGBase):
             # Generate Korean Name via LLM
             try:
                 trans_resp = self.openai_client.chat.completions.create(
-                    model="gpt-4o-mini",
+                    model="gpt-4.1-mini",
                     messages=[
                         {
                             "role": "system",

@@ -3,8 +3,8 @@ import os
 
 
 def generate_markdown_summary():
-    dataset_path = "data/evaluation_dataset.csv"
-    results_path = "data/evaluation_results_ragas.csv"
+    dataset_path = "03_test_report/data/evaluation_dataset.csv"
+    results_path = "03_test_report/data/evaluation_results_ragas.csv"
 
     print("# 📊 테스트 결과 자동 요약\n")
 
@@ -45,7 +45,7 @@ def generate_markdown_summary():
             print(sample.to_markdown(index=False))
     else:
         print(f"\n⚠️ {results_path} 파일이 아직 생성되지 않았습니다.")
-        print("💡 `python src/03_test_report/evaluate_rag.py`를 먼저 실행해주세요.")
+        print("💡 `python 03_test_report/evaluate_rag.py`를 먼저 실행해주세요.")
 
 
 if __name__ == "__main__":

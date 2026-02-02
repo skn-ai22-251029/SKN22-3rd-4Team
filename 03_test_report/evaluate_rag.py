@@ -1,23 +1,18 @@
 import os
 import sys
 from pathlib import Path
-
-# Add src to path
-root_path = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(root_path))
-sys.path.insert(0, str(root_path / "src"))
-
-import os
-import sys
-from pathlib import Path
 import pandas as pd
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from dotenv import load_dotenv
 from datasets import Dataset
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 
-# Add src to path
-root_path = Path(__file__).parent.parent.parent
-sys.path.insert(0, str(root_path))
+# Add project root to path (SKN22-3rd-4Team)
+# Current file: SKN22-3rd-4Team/03_test_report/evaluate_rag.py
+# .parent -> 03_test_report
+# .parent.parent -> SKN22-3rd-4Team
+root_path = Path(__file__).resolve().parent.parent
+sys.path.append(str(root_path))
+sys.path.append(str(root_path / "src"))
 
 from src.rag.analyst_chat import AnalystChatbot
 
@@ -63,7 +58,7 @@ def evaluate_rag():
     contexts = []
 
     # Cost saving: Limit evaluation if dataset is huge, but usually it's small (50)
-    # df = df.head(5) # Uncomment to test with small subset
+    # df = df.head(3)  # Uncomment to test with small subset
 
     for idx, row in df.iterrows():
         question = row.get("question")
@@ -75,8 +70,19 @@ def evaluate_rag():
         print(f"Processing [{idx+1}/{len(df)}]: {question[:30]}...")
 
         try:
+            # Extract ticker from context (Ground Truth) to simulate user selection
+            # Context format: "['Target Company: Name (TICKER)...']"
+            gt_context = row.get("contexts", "")
+            ticker = None
+            if gt_context and isinstance(gt_context, str):
+                import re
+
+                match = re.search(r"Target Company: .*? \((\w+)\)", gt_context)
+                if match:
+                    ticker = match.group(1)
+
             # Chatbot call
-            response = bot.chat(question)
+            response = bot.chat(question, ticker=ticker)
 
             # Extract answer
             answer_text = response.get("content", "")
