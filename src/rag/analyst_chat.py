@@ -79,7 +79,7 @@ class AnalystChatbot(RAGBase):
         """Search relevant documents"""
         if self.vector_store:
             try:
-                return self.vector_store.similarity_search(query, k=limit)
+                return self.vector_store.hybrid_search(query, k=limit)
             except Exception as e:
                 logger.error(f"VectorStore search failed: {e}")
         return []
@@ -491,6 +491,15 @@ class AnalystChatbot(RAGBase):
                     {"error": "주가 데이터를 가져오지 못했습니다."}, ensure_ascii=False
                 )
 
+            elif function_name == "add_to_favorites":
+                try:
+                    from src.tools.favorites_manager import add_to_favorites_tool
+
+                    ticker = function_args.get("ticker", "")
+                    return add_to_favorites_tool(ticker)
+                except ImportError:
+                    return "즐겨찾기 관리 모듈을 찾을 수 없습니다."
+
             return json.dumps({"error": f"Unknown function: {function_name}"})
         except Exception as e:
             logger.error(f"Error executing {function_name}: {e}")
@@ -643,13 +652,26 @@ class AnalystChatbot(RAGBase):
 
         target_ticker = tickers[0] if tickers else None
 
-        # 히스토리에서 티커 역추적
+        # 히스토리에서 티커 역추적 (User 메시지 우선)
         if not target_ticker:
             for hist_msg in reversed(self.conversation_history):
-                matches = re.findall(r"\b[A-Z]{2,5}\b", hist_msg["content"])
-                if matches:
-                    target_ticker = matches[0]
-                    break
+                # 사용자가 직접 언급한 순서를 따르기 위해 user 메시지 우선 확인
+                if hist_msg.get("role") == "user":
+                    matches = re.findall(r"\b[A-Z]{2,5}\b", hist_msg["content"])
+                    if matches:
+                        # 사용자가 "A와 B 비교해줘"라고 했다면 matches=[A, B]
+                        # "먼저 나온 기업" = matches[0] (A)
+                        target_ticker = matches[0]
+                        break
+
+            # User 메시지에서 못 찾았다면 Assistant 메시지에서 확인 (Fallback)
+            if not target_ticker:
+                for hist_msg in reversed(self.conversation_history):
+                    if hist_msg.get("role") == "assistant":
+                        matches = re.findall(r"\b[A-Z]{2,5}\b", hist_msg["content"])
+                        if matches:
+                            target_ticker = matches[0]
+                            break
 
         if not target_ticker:
             return None, "md"
@@ -657,48 +679,84 @@ class AnalystChatbot(RAGBase):
         try:
             from rag.report_generator import ReportGenerator
             from utils.pdf_utils import create_pdf
-            import matplotlib.pyplot as plt
-            import matplotlib
-            import yfinance as yf
-            from io import BytesIO
+            from utils.chart_utils import (
+                generate_line_chart,
+                generate_candlestick_chart,
+                generate_volume_chart,
+                generate_financial_chart,
+            )
 
-            # Backend setting for thread safety
-            matplotlib.use("Agg")
-
-            # 1. Generate Chart Image
-            chart_buf = None
-            try:
-                end_d = datetime.now()
-                start_d = end_d - timedelta(days=90)
-                stock = yf.Ticker(target_ticker)
-                hist = stock.history(start=start_d, end=end_d)
-
-                if not hist.empty:
-                    plt.figure(figsize=(10, 5))
-                    plt.plot(hist.index, hist["Close"], label=f"{target_ticker} Price")
-                    plt.title(f"{target_ticker} 3-Month Price History")
-                    plt.xlabel("Date")
-                    plt.ylabel("Price")
-                    plt.grid(True)
-                    plt.legend()
-
-                    chart_buf = BytesIO()
-                    plt.savefig(chart_buf, format="png", dpi=100)
-                    chart_buf.seek(0)
-                    plt.close()
-            except Exception as e:
-                logger.warning(f"Chart generation for PDF failed: {e}")
-
-            # 2. Generate Report Content
             generator = ReportGenerator()
-            report_md = generator.generate_report(target_ticker)
+            report_md = ""
 
-            # 3. Create PDF with Chart
-            try:
-                pdf_bytes = create_pdf(report_md, chart_image=chart_buf)
-                return pdf_bytes, "pdf"
-            except Exception:
-                return report_md, "md"
+            # --- 비교 분석 레포트 (2개 이상) ---
+            if len(target_tickers) > 1:
+                # 비교 분석 리포트 생성
+                report_md = generator.generate_comparison_report(target_tickers)
+
+                # 비교 분석용 차트 생성 (Line, Volume, Financial)
+                chart_buffers = []
+                try:
+                    c1 = generate_line_chart(target_tickers)
+                    if c1:
+                        chart_buffers.append(c1)
+
+                    c2 = generate_volume_chart(target_tickers)
+                    if c2:
+                        chart_buffers.append(c2)
+
+                    c3 = generate_financial_chart(target_tickers)
+                    if c3:
+                        chart_buffers.append(c3)
+                except Exception as e:
+                    logger.warning(f"Comparison charts generation failed: {e}")
+
+                # PDF 생성
+                try:
+                    pdf_bytes = create_pdf(report_md, chart_images=chart_buffers)
+                    return pdf_bytes, "pdf"
+                except Exception:
+                    return report_md, "md"
+
+            # --- 단일 기업 분석 레포트 ---
+            else:
+                target_ticker = target_tickers[0]
+
+                # 1. Generate Report Content
+                report_md = generator.generate_report(target_ticker)
+
+                # 2. Generate All Charts
+                chart_buffers = []
+                try:
+                    # Line Chart
+                    c1 = generate_line_chart([target_ticker])
+                    if c1:
+                        chart_buffers.append(c1)
+
+                    # Candlestick
+                    c2 = generate_candlestick_chart([target_ticker])
+                    if c2:
+                        chart_buffers.append(c2)
+
+                    # Volume
+                    c3 = generate_volume_chart([target_ticker])
+                    if c3:
+                        chart_buffers.append(c3)
+
+                    # Financial
+                    c4 = generate_financial_chart([target_ticker])
+                    if c4:
+                        chart_buffers.append(c4)
+                except Exception as e:
+                    logger.warning(f"Chart generation failed: {e}")
+
+                # 3. Create PDF with Charts
+                try:
+                    pdf_bytes = create_pdf(report_md, chart_images=chart_buffers)
+                    return pdf_bytes, "pdf"
+                except Exception:
+                    return report_md, "md"
+
         except Exception as e:
             logger.warning(f"Report generation failed: {e}")
             return None, "md"

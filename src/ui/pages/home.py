@@ -465,8 +465,23 @@ def _render_db_status_tab(
                 and companies_df["sector"].notna().any()
             ):
                 sector_counts = companies_df["sector"].value_counts()
+
+                # 유효하지 않은 섹터 필터링 (숫자로만 된 경우 또는 "11" 같은 오류 데이터)
+                valid_sectors = [
+                    s
+                    for s in sector_counts.index
+                    if s
+                    and not str(s).strip().isdigit()
+                    and str(s).strip() != "11"
+                    and str(s).lower() != "nan"
+                ]
+                sector_counts = sector_counts[valid_sectors]
+
                 # Plotly 파이 차트
-                _render_plotly_pie_chart(sector_counts, "섹터별 기업 분포")
+                if not sector_counts.empty:
+                    _render_plotly_pie_chart(sector_counts, title="섹터별 기업 분포")
+                else:
+                    st.info("유효한 섹터 정보가 없습니다.")
             else:
                 st.info("섹터 정보가 아직 없습니다.")
     else:

@@ -163,25 +163,41 @@ def render():
     # -------------------------------------------------------------
     st.markdown("### 🎯 분석 대상 (선택됨)")
 
+    # Custom CSS for flexbox layout of tags
+    st.markdown(
+        """
+    <style>
+    .favorite-tag-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 20px;
+    }
+    .stButton button {
+        height: auto !important;
+        padding: 4px 12px !important;
+    }
+    </style>
+    """,
+        unsafe_allow_html=True,
+    )
+
     if st.session_state.selected_tickers:
-        # Display tags in rows for tighter packing.
-        # Using 6 cols reduces the width of each "cell", pulling buttons closer.
-        cols_per_row = 6
+        # Use a container for flex layout if possible, but st.button is tricky.
+        # Fallback to dense columns or just flowing markdown if they were links.
+        # Since they are buttons, we'll use a dense column layout but with dynamic sizing.
+        # Actually, standard columns with hardcoded 6 is what caused the gap.
+        # Let's try flexible columns based on count, max 8.
+
         tags = st.session_state.selected_tickers
+        cols = st.columns(8)  # More columns = tighter packing for small items
 
-        for i in range(0, len(tags), cols_per_row):
-            row_tags = tags[i : i + cols_per_row]
-            cols = st.columns(cols_per_row)
-
-            for j, t in enumerate(row_tags):
-                with cols[j]:
-                    # Simple label: "{t}" (user requested emoji removal)
-                    # Use unique key per item
-                    if st.button(
-                        t, key=f"rm_{t}", help="클릭하여 삭제 (Click to remove)"
-                    ):
-                        remove_ticker(t)
-                        st.rerun()
+        for i, t in enumerate(tags):
+            col_idx = i % 8
+            with cols[col_idx]:
+                if st.button(t, key=f"rm_{t}", help="클릭하여 삭제"):
+                    remove_ticker(t)
+                    st.rerun()
     else:
         st.caption("비어 있음. 아래에서 검색하여 추가하세요.")
 

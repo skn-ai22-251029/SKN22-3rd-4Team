@@ -1,11 +1,12 @@
 """
 Vector store for document embeddings and similarity search using Supabase
 Uses Supabase REST API with pgvector extension
+Enhanced with CrossEncoder Reranking for improved search accuracy
 """
 
 import logging
 import os
-from typing import List, Dict, Optional
+from typing import List, Dict, Optional, Tuple
 from openai import OpenAI
 from supabase import create_client, Client
 from dotenv import load_dotenv
@@ -13,6 +14,9 @@ from dotenv import load_dotenv
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+# CrossEncoder 모델 (Lazy Loading)
+_reranker = None
 
 
 class VectorStore:
@@ -140,9 +144,13 @@ class VectorStore:
                 {
                     "query_embedding": query_embedding,
                     "match_count": k,
-                    "match_threshold": 0.5,  # Minimum similarity threshold
+                    "match_threshold": 0.1,  # Threshold 낮춤 (0.5 -> 0.1)
                 },
             ).execute()
+
+            # 디버깅: 응답 데이터 로깅
+            if not response.data:
+                logger.warning(f"No results from match_documents. Response: {response}")
 
             # Format results
             documents = []
@@ -160,7 +168,102 @@ class VectorStore:
 
         except Exception as e:
             logger.error(f"Error in similarity search: {str(e)}")
+            import traceback
+
+            traceback.print_exc()
             return []
+
+    def _load_reranker(self):
+        """CrossEncoder 모델 로드 (Lazy Loading)"""
+        global _reranker
+        if _reranker is None:
+            try:
+                from sentence_transformers import CrossEncoder
+
+                _reranker = CrossEncoder("cross-encoder/ms-marco-MiniLM-L-6-v2")
+                logger.info("CrossEncoder reranker loaded successfully")
+            except ImportError:
+                logger.warning(
+                    "sentence-transformers not installed. Reranking will be disabled."
+                )
+                return None
+        return _reranker
+
+    def rerank_results(
+        self, query: str, documents: List[Dict], top_k: int = 5
+    ) -> List[Dict]:
+        """
+        CrossEncoder를 사용하여 검색 결과 재정렬
+
+        Args:
+            query: 원본 질문
+            documents: Vector Search 결과
+            top_k: 반환할 문서 수
+
+        Returns:
+            재정렬된 문서 리스트
+        """
+        if not documents:
+            return []
+
+        reranker = self._load_reranker()
+        if reranker is None:
+            return documents[:top_k]
+
+        try:
+            # CrossEncoder는 (query, document) 쌍의 점수를 계산
+            pairs = [(query, doc.get("content", "")[:1000]) for doc in documents]
+            scores = reranker.predict(pairs)
+
+            # 점수와 문서를 함께 정렬
+            scored_docs = list(zip(documents, scores))
+            scored_docs.sort(key=lambda x: x[1], reverse=True)
+
+            # 상위 top_k 문서 반환 (rerank_score 추가 및 음수 점수 필터링)
+            reranked = []
+            for doc, score in scored_docs:
+                if score < 0:  # 관련성 없는 문서(음수 점수) 제거
+                    continue
+
+                doc["rerank_score"] = float(score)
+                reranked.append(doc)
+
+                if len(reranked) >= top_k:
+                    break
+
+            logger.info(f"Reranked {len(documents)} docs → top {top_k}")
+            return reranked
+
+        except Exception as e:
+            logger.error(f"Reranking failed: {e}")
+            return documents[:top_k]
+
+    def similarity_search_with_rerank(
+        self,
+        query: str,
+        k: int = 5,
+        initial_k: int = 20,
+        filter_dict: Optional[Dict] = None,
+    ) -> List[Dict]:
+        """
+        Vector Search + Reranking 통합 검색
+
+        Args:
+            query: 검색 질문
+            k: 최종 반환 문서 수
+            initial_k: 1차 Vector Search에서 가져올 문서 수
+            filter_dict: 메타데이터 필터
+
+        Returns:
+            재정렬된 상위 k개 문서
+        """
+        # 1. 먼저 더 많은 문서를 Vector Search로 가져옴
+        initial_results = self.similarity_search(query, initial_k, filter_dict)
+
+        # 2. CrossEncoder로 재정렬
+        reranked_results = self.rerank_results(query, initial_results, k)
+
+        return reranked_results
 
     def search_by_company(self, query: str, company: str, k: int = 5) -> List[Dict]:
         """
@@ -183,6 +286,110 @@ class VectorStore:
         ]
 
         return filtered[:k]
+
+    def hybrid_search(
+        self,
+        query: str,
+        k: int = 5,
+        vector_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+    ) -> List[Dict]:
+        """
+        Hybrid Search: Vector(의미) + Keyword(BM25) 결합
+
+        Args:
+            query: 검색 질문
+            k: 반환할 문서 수
+            vector_weight: Vector 검색 가중치 (기본 0.7)
+            keyword_weight: Keyword 검색 가중치 (기본 0.3)
+
+        Returns:
+            결합된 검색 결과
+        """
+        try:
+            # 1. Vector Search 결과
+            vector_results = self.similarity_search(query, k * 2)
+            vector_ids = {doc["id"]: (i, doc) for i, doc in enumerate(vector_results)}
+
+            # 2. Keyword Search (Supabase Full-Text Search)
+            # PostgreSQL의 to_tsquery를 사용하여 키워드 검색
+            keywords = " | ".join(query.split()[:5])  # 상위 5개 키워드만 사용
+
+            try:
+                # Supabase Full-Text Search 대신 ILIKE 패턴 매칭 사용
+                # (더 호환성이 좋음)
+                search_pattern = f"%{query.split()[0]}%"  # 첫 번째 키워드로 검색
+                keyword_response = (
+                    self.supabase.table(self.table_name)
+                    .select("id, content, metadata")
+                    .ilike("content", search_pattern)
+                    .limit(k * 2)
+                    .execute()
+                )
+                keyword_results = keyword_response.data or []
+            except Exception as e:
+                logger.warning(f"Keyword search failed, using vector only: {e}")
+                keyword_results = []
+
+            keyword_ids = {doc["id"]: (i, doc) for i, doc in enumerate(keyword_results)}
+
+            # 3. RRF (Reciprocal Rank Fusion) 스코어 계산
+            rrf_scores = {}
+            RRF_K = 60  # RRF 상수
+
+            for doc_id, (rank, doc) in vector_ids.items():
+                rrf_scores[doc_id] = {
+                    "doc": doc,
+                    "score": vector_weight * (1 / (RRF_K + rank)),
+                }
+
+            for doc_id, (rank, doc) in keyword_ids.items():
+                if doc_id in rrf_scores:
+                    rrf_scores[doc_id]["score"] += keyword_weight * (1 / (RRF_K + rank))
+                else:
+                    rrf_scores[doc_id] = {
+                        "doc": {
+                            "id": doc_id,
+                            "content": doc.get("content"),
+                            "metadata": doc.get("metadata"),
+                            "similarity": 0,
+                        },
+                        "score": keyword_weight * (1 / (RRF_K + rank)),
+                    }
+
+            # 4. RRF 스코어로 정렬
+            sorted_results = sorted(
+                rrf_scores.values(), key=lambda x: x["score"], reverse=True
+            )
+
+            # 5. 상위 후보군 추출 (Reranking 전)
+            # Reranking을 위해 k보다 조금 더 많이 가져옴
+            candidates = []
+            for item in sorted_results[: k * 2]:
+                doc = item["doc"]
+                doc["hybrid_score"] = item["score"]
+                candidates.append(doc)
+
+            # 6. CrossEncoder로 최종 재정렬 (Hybrid + Reranking)
+            try:
+                final_results = self.rerank_results(query, candidates, k)
+                logger.info(
+                    f"Hybrid Search: {len(vector_results)} vec + {len(keyword_results)} key -> {len(candidates)} cand -> {len(final_results)} reranked"
+                )
+                return final_results
+            except Exception as e:
+                logger.warning(f"Reranking in hybrid search failed: {e}")
+                return candidates[:k]
+
+            logger.info(
+                f"Hybrid search: {len(vector_results)} vector + {len(keyword_results)} keyword → {len(final_results)} combined"
+            )
+            return final_results
+
+        except Exception as e:
+            logger.error(f"Hybrid search failed: {e}")
+            # Fallback to reranked vector search
+            return self.similarity_search_with_rerank(query, k)
 
     def get_stats(self) -> Dict:
         """Get statistics about the table"""

@@ -166,4 +166,21 @@ def get_chat_tools():
                 },
             },
         },
+        {
+            "type": "function",
+            "function": {
+                "name": "add_to_favorites",
+                "description": "Add a company to the user's favorites/watchlist.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "ticker": {
+                            "type": "string",
+                            "description": "Company ticker symbol to add (e.g. AAPL, MSFT).",
+                        }
+                    },
+                    "required": ["ticker"],
+                },
+            },
+        },
     ]

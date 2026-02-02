@@ -187,13 +187,15 @@ def _render_suggested_questions():
 
     cols = st.columns(2)
     for i, question in enumerate(suggested_questions):
+        # Key unique to message count to avoid stale buttons
         with cols[i % 2]:
             if st.button(
                 f"💬 {question}",
                 key=f"suggest_{msg_count}_{i}",
                 use_container_width=True,
             ):
-                st.session_state.pending_question = question
+                # 입력창에 텍스트 채우기 (자동 전송 X)
+                st.session_state["chat_input_field"] = question
                 st.rerun()
 
 
@@ -207,6 +209,7 @@ def _render_chat_input():
                 "질문 입력",
                 placeholder="'애플 등록해줘' 또는 '엔비디아와 비교해줘'를 입력해보세요.",
                 label_visibility="collapsed",
+                key="chat_input_field",
             )
 
         with send_col:

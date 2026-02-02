@@ -8,6 +8,7 @@ from typing import Optional, List, Dict, Any
 import pandas as pd
 from supabase import create_client, Client
 from dotenv import load_dotenv
+import hashlib
 
 load_dotenv()
 
@@ -186,6 +187,91 @@ class SupabaseClient:
         client = cls.get_client()
         # 여기서는 기본 테이블 조회만 지원
         return pd.DataFrame()
+
+    @classmethod
+    def register_user(cls, email, password):
+        """사용자 등록 (회원가입)"""
+        client = cls.get_client()
+        try:
+            # 1. 이메일 중복 확인
+            existing = client.table("users").select("id").eq("email", email).execute()
+            if existing.data:
+                return {"success": False, "message": "이미 존재하는 이메일입니다."}
+
+            # 2. 비밀번호 해싱 (간단한 SHA256 사용, 실제 프로덕션엔 bcrypt 권장)
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+            # 3. 사용자 생성
+            data = {"email": email, "password_hash": password_hash}
+            result = client.table("users").insert(data).execute()
+
+            if result.data:
+                return {"success": True, "user": result.data[0]}
+            return {"success": False, "message": "사용자 등록 실패"}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @classmethod
+    def login_user(cls, email, password):
+        """사용자 로그인"""
+        client = cls.get_client()
+        try:
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+
+            result = (
+                client.table("users")
+                .select("*")
+                .eq("email", email)
+                .eq("password_hash", password_hash)
+                .execute()
+            )
+
+            if result.data:
+                return {"success": True, "user": result.data[0]}
+            return {
+                "success": False,
+                "message": "이메일 또는 비밀번호가 잘못되었습니다.",
+            }
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @classmethod
+    def add_favorite(cls, user_id, ticker):
+        """관심 기업 추가"""
+        client = cls.get_client()
+        try:
+            data = {"user_id": user_id, "ticker": ticker}
+            client.table("favorites").upsert(data).execute()
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def remove_favorite(cls, user_id, ticker):
+        """관심 기업 제거"""
+        client = cls.get_client()
+        try:
+            client.table("favorites").delete().eq("user_id", user_id).eq(
+                "ticker", ticker
+            ).execute()
+            return True
+        except Exception:
+            return False
+
+    @classmethod
+    def get_favorites(cls, user_id):
+        """사용자의 관심 기업 목록 조회"""
+        client = cls.get_client()
+        try:
+            result = (
+                client.table("favorites")
+                .select("ticker")
+                .eq("user_id", user_id)
+                .execute()
+            )
+            return [item["ticker"] for item in result.data]
+        except Exception:
+            return []
 
 
 # 편의 함수

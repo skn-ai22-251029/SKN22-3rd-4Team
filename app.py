@@ -37,7 +37,7 @@ st.set_page_config(
 
 # Custom CSS Loading
 def load_css(file_name):
-    with open(file_name) as f:
+    with open(file_name, encoding="utf-8") as f:
         st.markdown(f"<style>{f.read()}</style>", unsafe_allow_html=True)
 
 
@@ -58,8 +58,22 @@ else:
         unsafe_allow_html=True,
     )
 
-# Sidebar navigation
-# Sidebar navigation
+# ============================================================
+# 로그인 체크
+# ============================================================
+if "is_logged_in" not in st.session_state:
+    st.session_state.is_logged_in = False
+    st.session_state.user = None
+
+if not st.session_state.is_logged_in:
+    import src.ui.pages.login_page as login_page
+
+    login_page.render()
+    st.stop()  # 로그인 전에는 메인 앱 실행 중단
+
+# ============================================================
+# Sidebar navigation (로그인 후 표시)
+# ============================================================
 st.sidebar.title("🏦 메뉴")
 st.sidebar.markdown("---")
 
@@ -75,66 +89,25 @@ selected_page = st.sidebar.radio(
     "페이지 선택", list(pages.keys()), label_visibility="collapsed"
 )
 
+# 로그아웃 버튼
+if st.sidebar.button("로그아웃"):
+    st.session_state.is_logged_in = False
+    st.session_state.user = None
+    st.session_state.watchlist = []
+    st.rerun()
+
+# ============================================================
+# 스케줄러 상태 표시 / 관심 기업 표시 (사이드바)
+# ============================================================
+st.sidebar.markdown("---")
+render_sidebar_status()
+
 st.sidebar.markdown("---")
 with st.sidebar.expander("⭐ 관심 기업", expanded=True):
-    # 관심 기업 초기화
-    if "watchlist" not in st.session_state:
-        st.session_state.watchlist = []
+    from ui.helpers.sidebar_manager import render_watchlist_sidebar
 
-    watchlist = st.session_state.watchlist
+    render_watchlist_sidebar()
 
-    # Quick Add 기능
-    add_col1, add_col2 = st.columns([3, 1])
-    with add_col1:
-        new_ticker = st.text_input(
-            "관심기업 추가",
-            placeholder="기업명/티커 입력",
-            label_visibility="collapsed",
-            key="sidebar_quick_add_ticker",
-        )
-    with add_col2:
-        add_clicked = st.button("﹢", key="sidebar_add_btn", help="관심 기업 추가")
-
-    if add_clicked and new_ticker:
-        search_term = new_ticker.strip()
-        # DB 검증: Supabase에서 티커 또는 한글명으로 검색
-        try:
-            from src.data.supabase_client import SupabaseClient
-
-            # search_companies는 ticker, company_name, korean_name 모두 검색
-            df = SupabaseClient.search_companies(search_term)
-
-            if not df.empty:
-                # 첫 번째 결과의 티커 사용
-                found_ticker = df.iloc[0]["ticker"]
-                found_name = df.iloc[0].get("korean_name") or df.iloc[0]["company_name"]
-
-                if found_ticker not in st.session_state.watchlist:
-                    st.session_state.watchlist.append(found_ticker)
-                    st.toast(f"✅ {found_name} ({found_ticker}) 추가됨")
-                    st.rerun()
-                else:
-                    st.toast(f"⚠️ {found_name} ({found_ticker})은(는) 이미 등록됨")
-            else:
-                st.toast(f"❌ '{search_term}' 검색 결과가 없습니다")
-        except Exception as e:
-            st.toast(f"⚠️ DB 연결 오류: {str(e)[:30]}")
-
-    st.markdown("---")
-
-    if watchlist:
-        # 리스트 복사본으로 순회하여 삭제 시 문제 방지
-        for ticker in list(watchlist):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.markdown(f"📈 {ticker}")
-            with col2:
-                if st.button("x", key=f"sidebar_rm_{ticker}", help="제거"):
-                    st.session_state.watchlist.remove(ticker)
-                    st.rerun()
-        st.caption(f"총 {len(st.session_state.watchlist)}개")
-    else:
-        st.caption("위 입력창에 기업명/티커를 입력하세요\n(예: 애플, MSFT)")
 
 st.sidebar.markdown("---")
 
@@ -161,10 +134,3 @@ if selected_page in pages:
         st.error(f"페이지 로드 실패: {e}")
         # 디버깅을 위한 상세 로그
         logger.error(f"Failed to load page {module_path}: {e}", exc_info=True)
-
-
-# ============================================================
-# 스케줄러 상태 표시 / 관심 기업 표시 (사이드바)
-# ============================================================
-render_sidebar_status()
-st.sidebar.markdown("---")

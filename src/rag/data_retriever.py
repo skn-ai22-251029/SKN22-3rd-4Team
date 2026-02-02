@@ -43,7 +43,7 @@ class DataRetriever:
             rag_future = None
             if include_rag and self.vector_store:
                 rag_future = executor.submit(
-                    self.vector_store.similarity_search,
+                    self.vector_store.hybrid_search,
                     f"Latest business overview and risks for {ticker}",
                     k=3,
                 )

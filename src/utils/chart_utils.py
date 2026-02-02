@@ -12,12 +12,21 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 from functools import lru_cache
 
+# 스타일 설정
+import matplotlib.style as mpl_style
+
+try:
+    mpl_style.use("seaborn-v0_8-whitegrid")
+except Exception:
+    pass
+
 logger = logging.getLogger(__name__)
 
-# 색상 팔레트 (비교용)
-COLORS = ["#2196f3", "#4caf50", "#ff9800", "#e91e63", "#9c27b0", "#00bcd4"]
-UP_COLOR = "#26a69a"  # 상승 - 초록
-DOWN_COLOR = "#ef5350"  # 하락 - 빨강
+# 색상 팔레트 (Professional)
+COLORS = ["#1f77b4", "#ff7f0e", "#2ca02c", "#d62728", "#9467bd", "#8c564b"]
+UP_COLOR = "#00C805"  # Bright Green (Rising)
+DOWN_COLOR = "#FF333A"  # Bright Red (Falling)
+GRID_COLOR = "#E0E0E0"
 
 # ============================================================
 # 🔧 DATA FETCHING LAYER (캐싱 적용)
@@ -128,19 +137,33 @@ def _setup_matplotlib():
     return plt
 
 
-def generate_line_chart(tickers: List[str], days: int = 90) -> Optional[BytesIO]:
-    """Stock Price Line Chart (supports comparison)"""
+def generate_line_chart(tickers: List[str], days: int = 180) -> Optional[BytesIO]:
+    """Stock Price Line Chart (Improved Layout)"""
     try:
-        plt = _setup_matplotlib()
-        fig, ax = plt.subplots(figsize=(10, 4))  # PDF용 컴팩트 사이즈
-        has_data = False
+        if isinstance(tickers, str):
+            tickers = [tickers]
 
+        plt = _setup_matplotlib()
+        fig, ax = plt.subplots(figsize=(10, 5))
+
+        has_data = False
         for i, ticker in enumerate(tickers):
             data = _fetch_stock_history(ticker, days)
             if data:
                 dates, _, _, _, closes, _ = data
                 color = COLORS[i % len(COLORS)]
-                ax.plot(dates, closes, label=ticker, linewidth=1.8, color=color)
+                # Add Shadow/Glow effect by plotting lines twice if possible, or just thicker line
+                ax.plot(
+                    dates,
+                    closes,
+                    label=f"{ticker}",
+                    linewidth=2,
+                    color=color,
+                    alpha=0.9,
+                )
+                ax.fill_between(
+                    dates, closes, min(closes), color=color, alpha=0.1
+                )  # Area under curve
                 has_data = True
 
         if not has_data:
@@ -150,18 +173,22 @@ def generate_line_chart(tickers: List[str], days: int = 90) -> Optional[BytesIO]
         title = (
             f"주가 추이 ({', '.join(tickers)})"
             if len(tickers) > 1
-            else f"{tickers[0]} 주가 추이"
+            else f"{tickers[0]} 주가 추이 (최근 {days}일)"
         )
-        ax.set_title(title, fontsize=14, fontweight="bold", pad=12)
-        ax.set_xlabel("날짜", fontsize=11)
-        ax.set_ylabel("주가 (USD)", fontsize=11)
-        ax.legend(loc="upper left", fontsize=10)
-        ax.grid(True, alpha=0.3, linestyle="--")
+        ax.set_title(title, fontsize=16, fontweight="bold", pad=20)
+        ax.set_ylabel("가격 (USD)", fontsize=12)
+        ax.legend(loc="upper left", frameon=True, fontsize=10)
+        ax.grid(True, color=GRID_COLOR, linestyle="-", linewidth=0.5)
+
+        # Remove top and right spines
+        ax.spines["top"].set_visible(False)
+        ax.spines["right"].set_visible(False)
+
         fig.autofmt_xdate()
         plt.tight_layout()
 
         buf = BytesIO()
-        fig.savefig(buf, format="png", dpi=400, bbox_inches="tight", facecolor="white")
+        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
         buf.seek(0)
         plt.close(fig)
         return buf
@@ -171,14 +198,18 @@ def generate_line_chart(tickers: List[str], days: int = 90) -> Optional[BytesIO]
 
 
 def generate_candlestick_chart(tickers: List[str], days: int = 60) -> Optional[BytesIO]:
-    """Candlestick Chart (comparison: subplots per ticker)"""
+    """Candlestick Chart (Improved Layout)"""
     try:
+        if isinstance(tickers, str):
+            tickers = [tickers]
+
         plt = _setup_matplotlib()
         from matplotlib.patches import Rectangle
 
         n_tickers = len(tickers)
+        # Dynamic height based on number of tickers
         fig, axes = plt.subplots(
-            n_tickers, 1, figsize=(12, 5 * n_tickers), squeeze=False  # 캔들스틱 크게
+            n_tickers, 1, figsize=(12, 6 * n_tickers), squeeze=False
         )
         has_any_data = False
 
@@ -187,51 +218,55 @@ def generate_candlestick_chart(tickers: List[str], days: int = 60) -> Optional[B
             data = _fetch_stock_history(ticker, days)
 
             if not data:
-                ax.text(
-                    0.5,
-                    0.5,
-                    f"{ticker}: 데이터 없음",
-                    ha="center",
-                    va="center",
-                    fontsize=12,
-                )
-                ax.set_xlim(0, 1)
-                ax.set_ylim(0, 1)
                 continue
 
             has_any_data = True
-            dates, opens, highs, lows, closes, _ = data
+            dates, opens, highs, lows, closes, volumes = data
+
+            # Draw Candles
             width = 0.6
+            width2 = 0.1
 
             for i in range(len(dates)):
                 open_p, high, low, close = opens[i], highs[i], lows[i], closes[i]
                 color = UP_COLOR if close >= open_p else DOWN_COLOR
-                ax.plot([i, i], [low, high], color=color, linewidth=0.8)
-                body_bottom = min(open_p, close)
-                body_height = abs(close - open_p) or 0.01
-                ax.add_patch(
-                    Rectangle(
-                        (i - width / 2, body_bottom),
-                        width,
-                        body_height,
-                        facecolor=color,
-                        edgecolor=color,
-                    )
-                )
 
-            n = len(dates)
-            step = max(1, n // 6)
-            tick_pos = list(range(0, n, step))
+                # High-Low Line
+                ax.plot([i, i], [low, high], color=color, linewidth=1)
+
+                # Open-Close Body
+                body_bottom = min(open_p, close)
+                body_height = abs(close - open_p)
+                if body_height == 0:
+                    body_height = 0.01
+
+                rect = Rectangle(
+                    (i - width / 2, body_bottom),
+                    width,
+                    body_height,
+                    facecolor=color,
+                    edgecolor=color,
+                )
+                ax.add_patch(rect)
+
+            # Settings
+            ax.set_title(
+                f"{ticker} 캔들스틱 (최근 {days}일)",
+                fontsize=14,
+                fontweight="bold",
+                pad=10,
+            )
+            ax.set_ylabel("주가 (USD)")
+            ax.grid(True, color=GRID_COLOR, linestyle="--", linewidth=0.5)
+            ax.set_xlim(-1, len(dates))
+
+            # X-axis formatting
+            step = max(1, len(dates) // 8)
+            tick_pos = list(range(0, len(dates), step))
             ax.set_xticks(tick_pos)
             ax.set_xticklabels(
-                [dates[i].strftime("%m/%d") for i in tick_pos], rotation=45, fontsize=8
+                [dates[i].strftime("%m/%d") for i in tick_pos], rotation=0
             )
-            ax.set_xlim(-1, n)
-            ax.set_title(
-                f"{ticker} 캔들스틱 ({days}일)", fontsize=13, fontweight="bold"
-            )
-            ax.set_ylabel("주가 (USD)", fontsize=10)
-            ax.grid(True, alpha=0.3, linestyle="--")
 
         if not has_any_data:
             plt.close(fig)
@@ -239,7 +274,7 @@ def generate_candlestick_chart(tickers: List[str], days: int = 60) -> Optional[B
 
         plt.tight_layout()
         buf = BytesIO()
-        fig.savefig(buf, format="png", dpi=400, bbox_inches="tight", facecolor="white")
+        fig.savefig(buf, format="png", dpi=150, bbox_inches="tight", facecolor="white")
         buf.seek(0)
         plt.close(fig)
         return buf
@@ -251,6 +286,10 @@ def generate_candlestick_chart(tickers: List[str], days: int = 60) -> Optional[B
 def generate_volume_chart(tickers: List[str], days: int = 60) -> Optional[BytesIO]:
     """Trading Volume Chart (comparison: overlay lines)"""
     try:
+        # 단일 티커 문자열이 들어올 경우 리스트로 변환
+        if isinstance(tickers, str):
+            tickers = [tickers]
+
         plt = _setup_matplotlib()
         fig, ax = plt.subplots(figsize=(10, 4))  # PDF용 컴팩트 사이즈
         has_data = False
@@ -297,10 +336,12 @@ def generate_volume_chart(tickers: List[str], days: int = 60) -> Optional[BytesI
         ax.set_ylabel("거래량 (백만)", fontsize=11)
         ax.legend(loc="upper right", fontsize=10)
         ax.grid(True, alpha=0.3, linestyle="--")
-        plt.tight_layout()
+
+        # Title 잘림 방지
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
         buf = BytesIO()
-        fig.savefig(buf, format="png", dpi=400, bbox_inches="tight", facecolor="white")
+        fig.savefig(buf, format="png", dpi=300, facecolor="white")
         buf.seek(0)
         plt.close(fig)
         return buf
@@ -312,6 +353,10 @@ def generate_volume_chart(tickers: List[str], days: int = 60) -> Optional[BytesI
 def generate_financial_chart(tickers: List[str]) -> Optional[BytesIO]:
     """Quarterly Financial Chart (comparison: grouped bars)"""
     try:
+        # 단일 티커 문자열이 들어올 경우 리스트로 변환
+        if isinstance(tickers, str):
+            tickers = [tickers]
+
         plt = _setup_matplotlib()
         import numpy as np
 
@@ -359,10 +404,12 @@ def generate_financial_chart(tickers: List[str]) -> Optional[BytesIO]:
         ax.set_ylabel("매출 (십억 USD)", fontsize=11)
         ax.legend(loc="upper left", fontsize=10)
         ax.grid(True, alpha=0.3, axis="y", linestyle="--")
-        plt.tight_layout()
+
+        # Title 잘림 방지
+        plt.tight_layout(rect=[0, 0.03, 1, 0.95])
 
         buf = BytesIO()
-        fig.savefig(buf, format="png", dpi=400, bbox_inches="tight", facecolor="white")
+        fig.savefig(buf, format="png", dpi=300, facecolor="white")
         buf.seek(0)
         plt.close(fig)
         return buf
