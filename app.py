@@ -60,67 +60,60 @@ else:
     )
 
 # ============================================================
-# 로그인 체크 & 세션 복구 (쿠키 사용)
+# 로그인 체크 & 세션 복구 (localStorage 사용)
 # ============================================================
-import extra_streamlit_components as stx
+import json
+from streamlit_javascript import st_javascript
 
+# 세션 상태 초기화
+if "is_logged_in" not in st.session_state:
+    st.session_state.is_logged_in = False
+    st.session_state.user = None
+    st.session_state.watchlist = []
+    st.session_state.just_logged_out = False
 
-def get_cookie_manager():
-    # 키를 명시하여 중복 생성 방지
-    return stx.CookieManager(key="app_cookie_manager")
-
-
-cookie_manager = get_cookie_manager()
-
-# 쿠키에서 세션 복구 시도
-if "is_logged_in" not in st.session_state or not st.session_state.is_logged_in:
-    # 쿠키 확인 (지연 없이 즉시 확인 시도)
-    cookies = cookie_manager.get_all()
-    session_data_str = cookies.get("session_data")
-
-    user_email = None
-    user_id = None
-
-    if session_data_str:
-        import json
-
+# localStorage에서 세션 복구 시도 (로그아웃 직후가 아닌 경우에만)
+if not st.session_state.is_logged_in and not st.session_state.get("just_logged_out", False):
+    # JavaScript로 localStorage에서 세션 데이터 가져오기
+    session_data_str = st_javascript("localStorage.getItem('stock_bot_session')")
+    
+    if session_data_str and session_data_str != "null" and isinstance(session_data_str, str):
         try:
             session_data = json.loads(session_data_str)
             user_email = session_data.get("email")
             user_id = session_data.get("id")
-        except Exception:
-            pass
 
-    if user_email and user_id:
-        # 간단한 복구 로직: 쿠키에 이메일과 ID가 모두 있어야 함
-        from data.supabase_client import SupabaseClient
+            if user_email and user_id:
+                from data.supabase_client import SupabaseClient
 
-        st.session_state.is_logged_in = True
-        st.session_state.user = {
-            "email": user_email,
-            "id": user_id,
-        }
+                st.session_state.is_logged_in = True
+                st.session_state.user = {
+                    "email": user_email,
+                    "id": user_id,
+                }
 
-        # 관심 기업 로드
-        try:
-            favorites = SupabaseClient.get_favorites(st.session_state.user["id"])
-            st.session_state.watchlist = favorites
-            st.toast(f"🔄 세션이 복구되었습니다 ({user_email})")
-            # 세션 복구 후 즉시 리런
-            st.rerun()
-        except Exception:
-            st.session_state.watchlist = []
-            st.rerun()
+                # 관심 기업 로드
+                try:
+                    favorites = SupabaseClient.get_favorites(user_id)
+                    st.session_state.watchlist = favorites
+                except Exception:
+                    st.session_state.watchlist = []
 
-if "is_logged_in" not in st.session_state:
-    st.session_state.is_logged_in = False
-    st.session_state.user = None
+                st.toast(f"🔄 세션이 복구되었습니다 ({user_email})")
+                st.rerun()
+        except Exception as e:
+            print(f"Session restore error: {e}")
 
+# 로그인 안 된 경우 로그인 페이지 표시
 if not st.session_state.is_logged_in:
     import ui.pages.login_page as login_page
 
-    # 쿠키 매니저 전달하여 중복 생성 방지
-    login_page.render(cookie_manager)
+    login_page.render()
+    
+    # 로그아웃 플래그 리셋 (로그인 페이지 렌더 후에 리셋)
+    if st.session_state.get("just_logged_out", False):
+        st.session_state.just_logged_out = False
+    
     st.stop()  # 로그인 전에는 메인 앱 실행 중단
 
 # ============================================================
@@ -141,37 +134,6 @@ selected_page = st.sidebar.radio(
     "페이지 선택", list(pages.keys()), label_visibility="collapsed"
 )
 
-# 로그아웃 버튼
-if st.sidebar.button("로그아웃"):
-    st.session_state.is_logged_in = False
-    st.session_state.user = None
-    st.session_state.watchlist = []
-
-    # 쿠키 삭제
-    try:
-        cookie_manager.delete("session_data")
-        # Legacy cleanup
-        cookie_manager.delete("user_email")
-        cookie_manager.delete("user_id")
-    except Exception:
-        pass
-
-    st.rerun()
-
-# ============================================================
-# 스케줄러 상태 표시 / 관심 기업 표시 (사이드바)
-# ============================================================
-st.sidebar.markdown("---")
-render_sidebar_status()
-
-st.sidebar.markdown("---")
-with st.sidebar.expander("⭐ 관심 기업", expanded=True):
-    from ui.helpers.sidebar_manager import render_watchlist_sidebar
-
-    render_watchlist_sidebar()
-
-
-st.sidebar.markdown("---")
 
 # Main content routing (Lazy Loading)
 if selected_page in pages:
@@ -193,3 +155,18 @@ if selected_page in pages:
         st.error(f"페이지 로드 실패: {e}")
         # 디버깅을 위한 상세 로그
         logger.error(f"Failed to load page {module_path}: {e}", exc_info=True)
+
+
+# ============================================================
+# 관심 기업 표시 / 스케줄러 상태 표시 (사이드바)
+# ============================================================
+
+st.sidebar.markdown("---")
+with st.sidebar.expander("⭐ 관심 기업", expanded=True):
+    from ui.helpers.sidebar_manager import render_watchlist_sidebar
+    render_watchlist_sidebar()
+
+# 회원정보관리 버튼 (helper에서 import)
+from ui.helpers.sidebar_manager import render_user_settings_button
+render_user_settings_button()
+render_sidebar_status()
