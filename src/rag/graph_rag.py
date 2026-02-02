@@ -274,6 +274,182 @@ Be specific and cite relationships when relevant. Answer in Korean."""
 
         return {"query": query, "ticker": ticker, "response": response, "context": context_str}
 
+    def build_local_graph(self) -> int:
+        """
+        Supabase의 관계 데이터를 NetworkX 그래프로 로드합니다.
+        Returns: 로드된 엣지 수
+        """
+        try:
+            # 모든 관계 가져오기
+            result = self.supabase.table("company_relationships").select("*").execute()
+            relationships = result.data or []
+            
+            # 그래프 초기화
+            self.local_graph.clear()
+            
+            for rel in relationships:
+                source = rel.get("source_ticker")
+                target = rel.get("target_ticker")
+                rel_type = rel.get("relationship_type", "related")
+                confidence = rel.get("confidence", 0.5)
+                
+                if source and target:
+                    # 노드 추가 (자동으로 중복 방지)
+                    self.local_graph.add_node(source, name=rel.get("source_company", source))
+                    self.local_graph.add_node(target, name=rel.get("target_company", target))
+                    
+                    # 엣지 추가 (관계 유형과 신뢰도를 속성으로)
+                    self.local_graph.add_edge(
+                        source, target,
+                        relationship_type=rel_type,
+                        confidence=confidence,
+                        weight=1 - confidence  # 신뢰도가 높을수록 거리가 짧음
+                    )
+            
+            logger.info(f"Built local graph: {self.local_graph.number_of_nodes()} nodes, {self.local_graph.number_of_edges()} edges")
+            return self.local_graph.number_of_edges()
+            
+        except Exception as e:
+            logger.error(f"Error building local graph: {e}")
+            return 0
+
+    def get_centrality(self, top_n: int = 10) -> Dict:
+        """
+        중심성 분석 - 가장 영향력 있는 기업 찾기
+        Returns: 다양한 중심성 지표별 상위 기업
+        """
+        if self.local_graph.number_of_nodes() == 0:
+            self.build_local_graph()
+        
+        if self.local_graph.number_of_nodes() == 0:
+            return {"error": "그래프에 데이터가 없습니다."}
+        
+        try:
+            # 연결 중심성 (Degree Centrality) - 직접 연결된 관계 수
+            degree_cent = nx.degree_centrality(self.local_graph)
+            
+            # 매개 중심성 (Betweenness Centrality) - 다리 역할
+            betweenness_cent = nx.betweenness_centrality(self.local_graph)
+            
+            # 근접 중심성 (Closeness Centrality) - 다른 노드와의 평균 거리
+            # DiGraph에서는 연결되지 않은 노드가 있을 수 있어 예외 처리
+            try:
+                closeness_cent = nx.closeness_centrality(self.local_graph)
+            except:
+                closeness_cent = {}
+            
+            # 상위 N개 추출
+            top_degree = sorted(degree_cent.items(), key=lambda x: x[1], reverse=True)[:top_n]
+            top_betweenness = sorted(betweenness_cent.items(), key=lambda x: x[1], reverse=True)[:top_n]
+            top_closeness = sorted(closeness_cent.items(), key=lambda x: x[1], reverse=True)[:top_n]
+            
+            return {
+                "degree_centrality": [{"ticker": k, "score": round(v, 4)} for k, v in top_degree],
+                "betweenness_centrality": [{"ticker": k, "score": round(v, 4)} for k, v in top_betweenness],
+                "closeness_centrality": [{"ticker": k, "score": round(v, 4)} for k, v in top_closeness],
+                "total_nodes": self.local_graph.number_of_nodes(),
+                "total_edges": self.local_graph.number_of_edges(),
+            }
+            
+        except Exception as e:
+            logger.error(f"Error calculating centrality: {e}")
+            return {"error": str(e)}
+
+    def find_shortest_path(self, source_ticker: str, target_ticker: str) -> Dict:
+        """
+        두 기업 간의 최단 경로 찾기
+        Returns: 경로와 관계 유형
+        """
+        if self.local_graph.number_of_nodes() == 0:
+            self.build_local_graph()
+        
+        try:
+            # 방향 무시하고 경로 찾기 (undirected view)
+            undirected = self.local_graph.to_undirected()
+            
+            if source_ticker not in undirected or target_ticker not in undirected:
+                return {"error": f"'{source_ticker}' 또는 '{target_ticker}'가 그래프에 없습니다."}
+            
+            # 최단 경로 찾기
+            path = nx.shortest_path(undirected, source=source_ticker, target=target_ticker)
+            
+            # 경로의 각 엣지 관계 유형 추출
+            path_details = []
+            for i in range(len(path) - 1):
+                node1, node2 = path[i], path[i + 1]
+                
+                # 원래 방향 그래프에서 관계 찾기
+                if self.local_graph.has_edge(node1, node2):
+                    edge_data = self.local_graph.get_edge_data(node1, node2)
+                    direction = "→"
+                elif self.local_graph.has_edge(node2, node1):
+                    edge_data = self.local_graph.get_edge_data(node2, node1)
+                    direction = "←"
+                else:
+                    edge_data = {}
+                    direction = "—"
+                
+                path_details.append({
+                    "from": node1,
+                    "to": node2,
+                    "direction": direction,
+                    "relationship": edge_data.get("relationship_type", "related"),
+                })
+            
+            return {
+                "source": source_ticker,
+                "target": target_ticker,
+                "path": path,
+                "path_length": len(path) - 1,
+                "details": path_details,
+            }
+            
+        except nx.NetworkXNoPath:
+            return {"error": f"'{source_ticker}'와 '{target_ticker}' 사이에 경로가 없습니다."}
+        except Exception as e:
+            logger.error(f"Error finding shortest path: {e}")
+            return {"error": str(e)}
+
+    def get_connected_companies(self, ticker: str, max_depth: int = 2) -> Dict:
+        """
+        특정 기업과 연결된 모든 기업 찾기 (BFS)
+        Returns: depth별 연결된 기업 목록
+        """
+        if self.local_graph.number_of_nodes() == 0:
+            self.build_local_graph()
+        
+        if ticker not in self.local_graph:
+            return {"error": f"'{ticker}'가 그래프에 없습니다."}
+        
+        try:
+            undirected = self.local_graph.to_undirected()
+            
+            # BFS로 depth별 노드 찾기
+            connected_by_depth = {}
+            visited = {ticker}
+            current_level = {ticker}
+            
+            for depth in range(1, max_depth + 1):
+                next_level = set()
+                for node in current_level:
+                    neighbors = set(undirected.neighbors(node)) - visited
+                    next_level.update(neighbors)
+                    visited.update(neighbors)
+                
+                if next_level:
+                    connected_by_depth[f"depth_{depth}"] = list(next_level)
+                current_level = next_level
+            
+            return {
+                "ticker": ticker,
+                "connected": connected_by_depth,
+                "total_connected": len(visited) - 1,  # 자기 자신 제외
+            }
+            
+        except Exception as e:
+            logger.error(f"Error finding connected companies: {e}")
+            return {"error": str(e)}
+
     def get_stats(self) -> Dict:
         """Get statistics"""
         stats = {}

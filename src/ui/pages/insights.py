@@ -194,10 +194,10 @@ def _render_suggested_questions():
                 key=f"suggest_{msg_count}_{i}",
                 use_container_width=True,
             ):
-                # 입력창 채우기 및 자동 전송 트리거
-                st.session_state["chat_input_field"] = question
                 # pending_question을 설정하여 _render_chat_input에서 반환하고 바로 처리되도록 함
                 st.session_state["pending_question"] = question
+                # 입력창 비우기 (질문이 입력창에 남지 않도록)
+                st.session_state["chat_input_field"] = ""
                 st.rerun()
 
 
