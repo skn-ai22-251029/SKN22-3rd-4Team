@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 
 # Cache the supabase client connection
-@st.cache_resource
+@st.cache_resource(show_spinner=False)
 def get_supabase_client() -> Client:
     """Get or create Supabase client"""
     try:
@@ -27,7 +27,7 @@ def get_supabase_client() -> Client:
 
 # Cache the ticker data to avoid too many DB calls
 # Refresh every hour (ttl=3600)
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def fetch_all_tickers():
     """Fetch all tickers from Supabase for local searching"""
     client = get_supabase_client()
@@ -46,6 +46,7 @@ def fetch_all_tickers():
         return []
 
 
+@st.cache_data(ttl=60, show_spinner=False)
 def search_tickers(search_term: str):
     """
     Search tickers by term.

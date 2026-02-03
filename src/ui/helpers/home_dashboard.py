@@ -121,11 +121,11 @@ def render_top_companies_tab(supabase_available: bool, company_count: int):
     # Circular import prevention
     from data.supabase_client import get_top_revenue_companies
 
-    st.markdown("### 📊 2024년 매출 상위 20개 기업")
+    st.markdown("### 📊 2025년 매출 상위 20개 기업")
 
     if supabase_available and company_count > 0:
         try:
-            top_df = get_top_revenue_companies(year=2024, limit=20)
+            top_df = get_top_revenue_companies(year=2025, limit=20)
 
             if not top_df.empty:
                 # 데이터 포맷팅
@@ -152,7 +152,7 @@ def render_top_companies_tab(supabase_available: bool, company_count: int):
                     title="매출 상위 10개 기업 (십억 USD)",
                 )
             else:
-                st.info("2024년 데이터가 아직 없습니다.")
+                st.info("2025년 데이터가 아직 없습니다.")
         except Exception as e:
             st.error(f"데이터 로드 오류: {e}")
     else:

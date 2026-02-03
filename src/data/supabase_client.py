@@ -89,22 +89,132 @@ class SupabaseClient:
         """특정 기업의 재무 요약 정보"""
         client = cls.get_client()
 
-        # 기업 정보
-        company = cls.get_company_by_ticker(ticker)
-        if not company:
-            return {}
+        # [FIX] 단순 get_company_by_ticker -> company_id 조회 방식은
+        # 중복 회사 데이터(ID가 다른 경우)가 있을 때 빈 데이터를 참조할 수 있음.
+        # 따라서 annual_reports를 주축으로 companies를 조인하여 티커로 직접 검색함.
 
-        # 연간 재무 데이터
-        reports = (
-            client.table("annual_reports")
-            .select("*")
-            .eq("company_id", company["id"])
-            .order("fiscal_year", desc=True)
-            .limit(5)
-            .execute()
-        )
+        try:
+            # [OPTIMIZED] Standard JOIN query
+            # We search for reports by joining with the companies table on ticker.
+            # This is the most efficient and correct way to relational data.
+            reports_query = (
+                client.table("annual_reports")
+                .select(
+                    "*, companies!inner(id, ticker, company_name, korean_name, sector, industry)"
+                )
+                .eq("companies.ticker", ticker)
+                .order("fiscal_year", desc=True)
+                .limit(50)
+                .execute()
+            )
+            raw_reports = reports_query.data if reports_query.data else []
 
-        return {"company": company, "annual_reports": reports.data}
+            # [DEBUG LOGGING]
+            try:
+                with open("debug_query_log.txt", "a", encoding="utf-8") as f:
+                    f.write(
+                        f"\n[QUERY DYNAMIC] Ticker: {ticker} -> Resolved ID: {target_company_id}\n"
+                    )
+                    f.write(f"Raw Count: {len(raw_reports)}\n")
+                    for r in raw_reports:
+                        f.write(
+                            f"  FY: {r.get('fiscal_year')} | Rev: {r.get('revenue')} | ID: {r.get('company_id')}\n"
+                        )
+            except Exception:
+                pass
+
+            # [DEBUG LOGGING]
+            try:
+                with open("debug_query_log.txt", "a", encoding="utf-8") as f:
+                    f.write(f"\n[QUERY] Ticker: {ticker}\n")
+                    f.write(f"Raw Count: {len(raw_reports)}\n")
+                    for r in raw_reports:
+                        f.write(
+                            f"  FY: {r.get('fiscal_year')} | Rev: {r.get('revenue')} | ID: {r.get('company_id')}\n"
+                        )
+            except Exception:
+                pass
+        except Exception as e:
+            # 조인 쿼리 실패 시 Fallback
+            print(f"Join query failed: {e}")
+            raw_reports = []
+
+        # 데이터가 없으면 기존 방식(Fallback)으로 회사 정보라도 조회 시도
+        if not raw_reports:
+            company = cls.get_company_by_ticker(ticker)
+            return {"company": company, "annual_reports": []} if company else {}
+
+        # 회사 정보는 첫 번째 리포트에서 추출 (어차피 같은 티커)
+        # companies 필드가 딕셔너리로 포함됨
+        first_row_company = raw_reports[0].get("companies")
+        # 회사 정보 객체 구성
+        company = {
+            "id": raw_reports[0].get("company_id"),  # 리포트의 company_id 사용
+            "ticker": first_row_company.get("ticker"),
+            "company_name": first_row_company.get("company_name"),
+            "korean_name": first_row_company.get("korean_name"),
+            "sector": first_row_company.get("sector"),
+            "industry": first_row_company.get("industry"),
+        }
+
+        final_reports = []
+        if raw_reports:
+            # 연도별로 데이터 분류
+            reports_by_year = {}
+            for row in raw_reports:
+                fy = row.get("fiscal_year")
+                if not fy:
+                    continue
+
+                # companies 필드는 리포트 데이터 자체에서는 제거 (깔끔하게)
+                row_clean = {k: v for k, v in row.items() if k != "companies"}
+
+                # [FIX] revenue가 없으면 (gross_profit + cost_of_revenue) 사용
+                # DB 스키마상 total_revenue는 없고, 대신 gross_profit과 cost_of_revenue는 존재함.
+                # Revenue = Gross Profit + Cost of Revenue
+                if row_clean.get("revenue") is None:
+                    gp = row_clean.get("gross_profit")
+                    cor = row_clean.get("cost_of_revenue")
+                    if gp is not None and cor is not None:
+                        # cost_of_revenue가 보통 양수로 저장되면 더해주고, 음수면 빼줘야 함.
+                        # 일반적인 DB에서는 양수로 저장됨.
+                        row_clean["revenue"] = float(gp) + float(cor)
+
+                if fy not in reports_by_year:
+                    reports_by_year[fy] = row_clean
+                else:
+                    # 이미 있는 행보다 현재 행이 더 나은지 확인 (revenue 유무)
+                    current_rev = row.get("revenue")
+                    saved_rev = reports_by_year[fy].get("revenue")
+
+                    # 저장된 것이 없고(None), 현재 것은 있으면 교체
+                    if saved_rev is None and current_rev is not None:
+                        reports_by_year[fy] = row_clean
+
+            # [DEBUG LOGGING]
+            try:
+                with open("debug_query_log.txt", "a", encoding="utf-8") as f:
+                    f.write(f"\n[QUERY FULL INSPECTOR] Ticker: {ticker}\n")
+                    if reports_by_year:
+                        first_year = list(reports_by_year.keys())[0]
+                        first_row = reports_by_year[first_year]
+                        f.write(f"First Row ({first_year}) Non-Null Data:\n")
+                        for k, v in first_row.items():
+                            if v is not None:
+                                f.write(f"  {k}: {v}\n")
+                    else:
+                        f.write("No reports found to inspect.\n")
+            except Exception:
+                pass
+
+            # 딕셔너리를 리스트로 변환 및 정렬 (최신순)
+            final_reports = sorted(
+                reports_by_year.values(), key=lambda x: x["fiscal_year"], reverse=True
+            )[
+                :5
+            ]  # 최근 5년치만 선택
+
+        return {"company": company, "annual_reports": final_reports}
 
     @classmethod
     def get_top_companies_by_revenue(
@@ -249,10 +359,13 @@ class SupabaseClient:
                 .eq("password_hash", current_hash)
                 .execute()
             )
-            
+
             if not user.data:
-                return {"success": False, "message": "현재 비밀번호가 일치하지 않습니다."}
-            
+                return {
+                    "success": False,
+                    "message": "현재 비밀번호가 일치하지 않습니다.",
+                }
+
             # 2. 새 비밀번호 해싱 및 업데이트
             new_hash = hashlib.sha256(new_password.encode()).hexdigest()
             result = (
@@ -261,7 +374,7 @@ class SupabaseClient:
                 .eq("id", user_id)
                 .execute()
             )
-            
+
             if result.data:
                 return {"success": True, "message": "비밀번호가 변경되었습니다."}
             return {"success": False, "message": "비밀번호 변경 실패"}
@@ -282,16 +395,16 @@ class SupabaseClient:
                 .eq("password_hash", password_hash)
                 .execute()
             )
-            
+
             if not user.data:
                 return {"success": False, "message": "비밀번호가 일치하지 않습니다."}
-            
+
             # 2. 관심 기업 데이터 삭제
             client.table("favorites").delete().eq("user_id", user_id).execute()
-            
+
             # 3. 사용자 삭제
             result = client.table("users").delete().eq("id", user_id).execute()
-            
+
             if result.data:
                 return {"success": True, "message": "회원 탈퇴가 완료되었습니다."}
             return {"success": False, "message": "회원 탈퇴 실패"}

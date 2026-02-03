@@ -13,10 +13,12 @@ from pathlib import Path
 # 경로 설정
 sys.path.insert(0, str(Path(__file__).parent.parent.parent.parent))
 
-@st.cache_data(ttl=3600)
+
+@st.cache_data(ttl=3600, show_spinner=False)
 def get_earnings_dates_yf(ticker: str) -> pd.DataFrame:
     try:
         import yfinance as yf
+
         stock = yf.Ticker(ticker)
         dates_df = stock.earnings_dates
         if dates_df is None or dates_df.empty:
@@ -24,6 +26,7 @@ def get_earnings_dates_yf(ticker: str) -> pd.DataFrame:
         return dates_df
     except Exception:
         return pd.DataFrame()
+
 
 def render():
     """실적 발표 캘린더 페이지 렌더링"""
@@ -56,10 +59,10 @@ def render():
     with col2:
         # 연도 입력창의 레이블(Label) 높이만큼 여백을 주어 수평 정렬
         st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-        
+
         if "selected_quarter_idx" not in st.session_state:
             st.session_state.selected_quarter_idx = current_q
-        
+
         quarter_cols = st.columns(4)
         # 레이블을 간결하게 수정하여 높이 불일치 방지
         quarters = [
@@ -68,11 +71,11 @@ def render():
             ("3분기", 3),
             ("4분기", 4),
         ]
-        
+
         for q_col, (label, q_num) in zip(quarter_cols, quarters):
             with q_col:
                 is_selected = st.session_state.selected_quarter_idx == q_num
-                
+
                 if is_selected:
                     # 선택된 박스: st.button과 동일한 높이(38.4px) 유지
                     st.markdown(
@@ -93,10 +96,12 @@ def render():
                             {label}
                         </div>
                         """,
-                        unsafe_allow_html=True
+                        unsafe_allow_html=True,
                     )
                 else:
-                    if st.button(label, key=f"quarter_{q_num}", use_container_width=True):
+                    if st.button(
+                        label, key=f"quarter_{q_num}", use_container_width=True
+                    ):
                         st.session_state.selected_quarter_idx = q_num
                         st.rerun()
 
@@ -113,7 +118,9 @@ def render():
     start_date = datetime.strptime(f"{selected_year}-{start_md}", "%Y-%m-%d").date()
     end_date = datetime.strptime(f"{selected_year}-{end_md}", "%Y-%m-%d").date()
 
-    st.info(f"📅 조회 기간: {selected_year}년 {selected_quarter_idx}분기 ({start_date} ~ {end_date})")
+    st.info(
+        f"📅 조회 기간: {selected_year}년 {selected_quarter_idx}분기 ({start_date} ~ {end_date})"
+    )
 
     # --- 관심 기업 데이터 처리 ---
     watchlist = st.session_state.get("watchlist", [])
@@ -145,13 +152,23 @@ def render():
                             eps_act = row.get("Reported EPS")
                             surprise = row.get("Surprise(%)")
 
-                            results.append({
-                                "발표일": e_date.strftime("%Y-%m-%d"),
-                                "티커": ticker,
-                                "EPS 예상": f"{eps_est:.2f}" if pd.notna(eps_est) else "-",
-                                "EPS 실제": f"{eps_act:.2f}" if pd.notna(eps_act) else "-",
-                                "서프라이즈": f"{surprise * 100:.1f}%" if pd.notna(surprise) else "-",
-                            })
+                            results.append(
+                                {
+                                    "발표일": e_date.strftime("%Y-%m-%d"),
+                                    "티커": ticker,
+                                    "EPS 예상": (
+                                        f"{eps_est:.2f}" if pd.notna(eps_est) else "-"
+                                    ),
+                                    "EPS 실제": (
+                                        f"{eps_act:.2f}" if pd.notna(eps_act) else "-"
+                                    ),
+                                    "서프라이즈": (
+                                        f"{surprise * 100:.1f}%"
+                                        if pd.notna(surprise)
+                                        else "-"
+                                    ),
+                                }
+                            )
 
             progress_bar.empty()
 
@@ -160,7 +177,7 @@ def render():
             else:
                 df = pd.DataFrame(results).sort_values("발표일")
                 st.success(f"📊 총 {len(df)}건의 실적 일정이 검색되었습니다.")
-                
+
                 for d in sorted(df["발표일"].unique()):
                     with st.expander(f"📅 {d}", expanded=True):
                         day_df = df[df["발표일"] == d].copy()
@@ -176,6 +193,7 @@ def render():
                 if st.button(f"✕ {ticker}", key=f"rm_cal_{ticker}"):
                     st.session_state.watchlist.remove(ticker)
                     st.rerun()
+
 
 if __name__ == "__main__":
     render()

@@ -71,25 +71,25 @@ def toggle_favorite_callback(ticker):
 # -----------------------------------------------------------------------------
 # Caching Functions
 # -----------------------------------------------------------------------------
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_cached_companies(supabase_client):
     """모든 기업 목록 캐싱 (1시간)"""
     return supabase_client.get_all_companies()
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_cached_annual_reports(supabase_client):
     """연간 재무 데이터 캐싱 (1시간)"""
     return supabase_client.get_annual_reports()
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_cached_top_revenue_companies(supabase_client, year=2024, limit=20):
     """매출 상위 기업 캐싱 (1시간)"""
     return supabase_client.get_top_companies_by_revenue(year, limit)
 
 
-@st.cache_data(ttl=3600)
+@st.cache_data(ttl=3600, show_spinner=False)
 def _get_cached_exchange_rates():
     """환율 정보 캐싱 (1시간)"""
     from tools.exchange_rate_client import get_exchange_client
