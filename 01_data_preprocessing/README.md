@@ -19,8 +19,9 @@
   - 병렬 처리(Parallel Processing)를 통해 대량의 문서 처리
 
 ### 3. 데이터 적재 (Loading)
-- **저장소**: Supabase `company_relationships` 테이블
-- **활용**: GraphRAG 엔진에서 `NetworkX` 그래프로 변환하여 분석에 사용
+- **저장소**: Supabase `company_relationships` 테이블 + **Neo4j 그래프 DB**
+- **활용**: GraphRAG 엔진에서 Neo4j Cypher 쿼리 및 `NetworkX` 그래프로 변환하여 분석에 사용
+- **마이그레이션**: `scripts/migrate_to_neo4j.py`로 Supabase → Neo4j 데이터 동기화
 
 ## 📊 데이터 스키마
 

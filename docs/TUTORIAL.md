@@ -55,24 +55,42 @@ streamlit run app.py
 `.env` 파일에 다음 내용을 입력하세요:
 
 ```env
-# OpenAI (필수 - 챗봇 및 RAG)
+# LLM (Gemini 우선 — 채팅/분석용)
+LLM_PROVIDER=gemini
+CHAT_MODEL=gemini-2.5-flash
+GOOGLE_API_KEY=your-google-api-key
+
+# OpenAI (필수 - 임베딩 전용)
 OPENAI_API_KEY=sk-...
 
 # Supabase (필수 - 데이터베이스)
 SUPABASE_URL=https://your-project.supabase.co
 SUPABASE_KEY=your-anon-key
 
+# Neo4j (그래프 DB)
+NEO4J_URI=neo4j+s://...
+NEO4J_USER=neo4j
+NEO4J_PASSWORD=...
+
 # Finnhub (필수 - 실시간 주가)
 FINNHUB_API_KEY=your-finnhub-key
+
+# LangSmith (선택 - 트레이싱)
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_...
+LANGSMITH_PROJECT=SKN22-3rd-4Team
 ```
 
 ### API 키 발급 방법
 
 | 서비스 | 발급 링크 | 비고 |
 | :--- | :--- | :--- |
-| OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) | 유료 |
-| Supabase | [supabase.com](https://supabase.com/) | 무료 티어 있음 |
-| Finnhub | [finnhub.io](https://finnhub.io/register) | 무료 티어 있음 |
+| Google AI | [aistudio.google.com](https://aistudio.google.com/apikey) | 무료 |
+| OpenAI | [platform.openai.com](https://platform.openai.com/api-keys) | 임베딩 전용 |
+| Supabase | [supabase.com](https://supabase.com/) | 무료 티어 |
+| Finnhub | [finnhub.io](https://finnhub.io/register) | 무료 티어 |
+| Neo4j Aura | [neo4j.com/cloud](https://neo4j.com/cloud/) | 무료 티어 |
+| LangSmith | [smith.langchain.com](https://smith.langchain.com/) | 무료 |
 
 ---
 
@@ -295,14 +313,14 @@ SKN22-3rd-4Team/
 ┌─────────────────────────────────────┐
 │     ChatConnector (Security)        │
 │  - Rate Limiting                    │
-│  - Session Management               │
 │  - Input Validation                 │
 └─────────────────────────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────┐
 │       Application Layer             │
-│  - AnalystChatbot                   │
+│  - LLM Client (Gemini/OpenAI)       │
+│  - AnalystChatbot + ToolExecutor    │
 │  - ReportGenerator                  │
 │  - DataRetriever (병렬 수집)         │
 └─────────────────────────────────────┘
@@ -310,9 +328,10 @@ SKN22-3rd-4Team/
                   ▼
 ┌─────────────────────────────────────┐
 │        Data Access Layer            │
-│  - Finnhub API                      │
+│  - Finnhub + yfinance API           │
 │  - Supabase DB + pgvector           │
-│  - GraphRAG                         │
+│  - Neo4j GraphDB                    │
+│  - LangSmith Tracing                │
 └─────────────────────────────────────┘
 ```
 
@@ -435,4 +454,4 @@ python -c "from src.core.input_validator import get_input_validator; print(get_i
 
 ---
 
-*최종 업데이트: 2026-01-30*
+*최종 업데이트: 2026-02-23*

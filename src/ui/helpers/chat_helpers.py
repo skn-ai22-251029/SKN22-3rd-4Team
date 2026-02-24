@@ -25,12 +25,13 @@ except ImportError:
     pass
 
 
-def render_chart_from_data(chart_data: Dict) -> bool:
+def render_chart_from_data(chart_data) -> bool:
     """
-    Tool Call로 받은 차트 데이터 Plotly로 렌더링
+    Tool Call로 받은 차트 데이터 Plotly로 렌더링 (여러 티커 지원)
 
     Args:
-        chart_data: {"c": [closes], "t": [timestamps], "ticker": "AAPL"}
+        chart_data: 단일 dict 또는 dict 리스트
+            각 dict: {"c": [closes], "t": [timestamps], "ticker": "AAPL"}
 
     Returns:
         차트 렌더링 성공 여부
@@ -38,49 +39,57 @@ def render_chart_from_data(chart_data: Dict) -> bool:
     if not chart_data:
         return False
 
-    if "c" not in chart_data or "t" not in chart_data:
-        return False
+    # 리스트가 아니면 리스트로 감싸기 (하위 호환)
+    if isinstance(chart_data, dict):
+        chart_data = [chart_data]
 
-    try:
-        ticker = chart_data.get("ticker", "Stock")
-        closes = chart_data["c"]
-        timestamps = chart_data["t"]
-        dates = [datetime.fromtimestamp(t) for t in timestamps]
+    rendered_any = False
+    for single_data in chart_data:
+        if "c" not in single_data or "t" not in single_data:
+            continue
 
-        st.subheader(f"📈 {ticker} 주가 추이")
+        try:
+            ticker = single_data.get("ticker", "Stock")
+            closes = single_data["c"]
+            timestamps = single_data["t"]
+            dates = [datetime.fromtimestamp(t) for t in timestamps]
 
-        if PLOTLY_AVAILABLE:
-            # Plotly 사용 - 선명한 벡터 그래픽
-            import plotly.graph_objects as go
+            st.subheader(f"📈 {ticker} 주가 추이")
 
-            fig = go.Figure()
-            fig.add_trace(
-                go.Scatter(
-                    x=dates,
-                    y=closes,
-                    mode="lines",
-                    name=ticker,
-                    line=dict(color="#2196F3", width=2),
+            if PLOTLY_AVAILABLE:
+                # Plotly 사용 - 선명한 벡터 그래픽
+                import plotly.graph_objects as go
+
+                fig = go.Figure()
+                fig.add_trace(
+                    go.Scatter(
+                        x=dates,
+                        y=closes,
+                        mode="lines",
+                        name=ticker,
+                        line=dict(color="#2196F3", width=2),
+                    )
                 )
-            )
-            fig.update_layout(
-                height=400,
-                xaxis_title="날짜",
-                yaxis_title="주가 (USD)",
-                hovermode="x unified",
-                template="plotly_white",
-            )
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            # Fallback - Streamlit 기본 차트
-            df = pd.DataFrame({"Date": dates, "Price": closes})
-            df.set_index("Date", inplace=True)
-            st.line_chart(df)
+                fig.update_layout(
+                    height=400,
+                    xaxis_title="날짜",
+                    yaxis_title="주가 (USD)",
+                    hovermode="x unified",
+                    template="plotly_white",
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            else:
+                # Fallback - Streamlit 기본 차트
+                df = pd.DataFrame({"Date": dates, "Price": closes})
+                df.set_index("Date", inplace=True)
+                st.line_chart(df)
 
-        st.caption(f"최근 {len(closes)}일/구간 데이터 ({ticker})")
-        return True
-    except Exception:
-        return False
+            st.caption(f"최근 {len(closes)}일/구간 데이터 ({ticker})")
+            rendered_any = True
+        except Exception:
+            continue
+
+    return rendered_any
 
 
 def render_chart_from_content(

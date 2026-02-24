@@ -36,6 +36,7 @@ except Exception as e:
 
 from src.data.supabase_client import SupabaseClient
 
+
 def load_documents_with_context(limit=50, offset=0):
     """Load documents and enrich with company info, financials, and relationships from Supabase."""
     print("⏳ Supabase에서 데이터 로딩 중...")
@@ -49,11 +50,16 @@ def load_documents_with_context(limit=50, offset=0):
 
     # 1. 문서 가져오기 (Limit sample size)
     print(f"📄 문서 샘플링 Limit: {limit}, Offset: {offset}")
-    
+
     try:
         # Fetch documents using range for offset
         # limit() applies to the result set size, range() is for pagination
-        res = supabase.table("documents").select("*").range(offset, offset + limit - 1).execute()
+        res = (
+            supabase.table("documents")
+            .select("*")
+            .range(offset, offset + limit - 1)
+            .execute()
+        )
         documents = res.data
         if not documents:
             print("❌ 문서가 없습니다.")
@@ -64,21 +70,25 @@ def load_documents_with_context(limit=50, offset=0):
         # 전체 회사 정보 가져오기 (캐싱)
         print("🏢 회사 정보 로딩...")
         res_comp = supabase.table("companies").select("*").execute()
-        companies = {c['ticker']: c for c in res_comp.data}
-        
+        companies = {c["ticker"]: c for c in res_comp.data}
+
         # 관계 정보 (Top relations)
         # 모든 관계를 가져오기엔 무거울 수 있으니 필요한 티커에 대해서만 추후 조회하거나
         # 지금은 간단히 최근 관계 1000개를 가져와서 매핑
         print("🕸️ 관계 정보 로딩...")
-        res_rel = supabase.table("company_relationships").select("*").limit(2000).execute()
+        res_rel = (
+            supabase.table("company_relationships").select("*").limit(2000).execute()
+        )
         relationships = {}
         for r in res_rel.data:
-            src = r.get('source_ticker')
+            src = r.get("source_ticker")
             if src:
                 if src not in relationships:
                     relationships[src] = []
-                relationships[src].append(f"{r.get('relationship_type')}: {r.get('target_company')}")
-        
+                relationships[src].append(
+                    f"{r.get('relationship_type')}: {r.get('target_company')}"
+                )
+
     except Exception as e:
         print(f"❌ 데이터 조회 실패: {e}")
         return []
@@ -89,36 +99,36 @@ def load_documents_with_context(limit=50, offset=0):
     for doc_data in documents:
         content = doc_data.get("content", "")
         metadata = doc_data.get("metadata") or {}
-        
+
         ticker = metadata.get("ticker")
-        
+
         context_parts = []
-        
+
         # 회사 정보 추가
         if ticker and ticker in companies:
             comp = companies[ticker]
-            k_name = comp.get("company_name", ticker) # company_name이 한국어라고 가정
+            k_name = comp.get("company_name", ticker)  # company_name이 한국어라고 가정
             context_parts.append(f"Target Company: {k_name} ({ticker})")
             if comp.get("sector"):
                 context_parts.append(f"Sector: {comp['sector']}")
-        
+
         # 관계 정보 추가
         if ticker and ticker in relationships:
             # 상위 5개만
             top_rels = relationships[ticker][:5]
             context_parts.append("Relationships: " + ", ".join(top_rels))
-            
+
         # Context 결합
         enrichment = "\n".join(context_parts) + "\n\n" if context_parts else ""
         full_content = enrichment + content
-        
+
         # Metadata 업데이트
         if ticker in companies:
-             metadata["korean_name"] = companies[ticker].get("company_name", ticker)
+            metadata["korean_name"] = companies[ticker].get("company_name", ticker)
 
         doc = Document(page_content=full_content, metadata=metadata)
         langchain_docs.append(doc)
-    
+
     return langchain_docs
 
 
@@ -211,8 +221,12 @@ def translate_to_korean(df, llm):
     return df
 
 
-def generate_dataset(limit=50, testset_size=20, offset=0, output_name="evaluation_dataset.csv"):
-    print(f"🚀 데이터셋 생성 시작 (Limit: {limit}, Size: {testset_size}, Offset: {offset}, Out: {output_name})...")
+def generate_dataset(
+    limit=50, testset_size=20, offset=0, output_name="evaluation_dataset.csv"
+):
+    print(
+        f"🚀 데이터셋 생성 시작 (Limit: {limit}, Size: {testset_size}, Offset: {offset}, Out: {output_name})..."
+    )
 
     # 1. 문서 로드 (Offset/Limit 적용)
     documents = load_documents_with_context(limit=limit, offset=offset)
@@ -267,7 +281,7 @@ def generate_dataset(limit=50, testset_size=20, offset=0, output_name="evaluatio
 
         df = testset.to_pandas()
 
-        # Rename columns 
+        # Rename columns
         column_mapping = {
             "user_input": "question",
             "reference": "ground_truth",
@@ -287,23 +301,32 @@ def generate_dataset(limit=50, testset_size=20, offset=0, output_name="evaluatio
     except Exception as e:
         print(f"❌ 데이터셋 생성 중 오류 발생: {e}")
         import traceback
+
         traceback.print_exc()
 
 
 if __name__ == "__main__":
     import argparse
-    
+
     parser = argparse.ArgumentParser(description="Generate evaluation dataset")
-    parser.add_argument("--limit", type=int, default=50, help="Number of documents to load")
-    parser.add_argument("--size", type=int, default=10, help="Size of testset to generate")
-    parser.add_argument("--offset", type=int, default=0, help="Offset for document loading")
-    parser.add_argument("--output", type=str, default="evaluation_dataset.csv", help="Output filename")
-    
+    parser.add_argument(
+        "--limit", type=int, default=50, help="Number of documents to load"
+    )
+    parser.add_argument(
+        "--size", type=int, default=10, help="Size of testset to generate"
+    )
+    parser.add_argument(
+        "--offset", type=int, default=0, help="Offset for document loading"
+    )
+    parser.add_argument(
+        "--output", type=str, default="evaluation_dataset.csv", help="Output filename"
+    )
+
     args = parser.parse_args()
-    
+
     generate_dataset(
-        limit=args.limit, 
-        testset_size=args.size, 
-        offset=args.offset, 
-        output_name=args.output
+        limit=args.limit,
+        testset_size=args.size,
+        offset=args.offset,
+        output_name=args.output,
     )
