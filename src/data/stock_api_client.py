@@ -47,7 +47,7 @@ class StockAPIClient:
             self.api_key = None
 
         if not self.fmp_api_key:
-            logger.warning("FMP_API_KEY not set. Some features may be limited.")
+            logger.debug("FMP_API_KEY not set. Earnings calendar unavailable.")
 
         self.session = requests.Session()
 

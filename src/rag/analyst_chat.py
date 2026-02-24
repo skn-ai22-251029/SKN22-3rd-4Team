@@ -1,6 +1,6 @@
 """
 Analyst Chatbot - 애널리스트/기자 스타일 챗봇
-Uses gpt-4.1-mini with RAG context
+Uses Gemini 2.5 Flash (or OpenAI fallback) with RAG context
 """
 
 import os
@@ -8,7 +8,8 @@ import logging
 from pathlib import Path
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta
-from openai import OpenAI
+
+# OpenAI는 임베딩 전용으로만 사용 (LLM은 llm_client를 통해)
 import json
 import re
 
@@ -26,12 +27,12 @@ PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 class AnalystChatbot(RAGBase):
     """
     애널리스트/기자 스타일로 금융 정보를 분석하고 답변하는 챗봇
-    gpt-4.1-mini 사용
+    Gemini 2.5 Flash 사용 (OpenAI fallback)
     """
 
     def __init__(self):
         """Initialize chatbot inheriting from RAGBase"""
-        self.model_name = "gpt-4.1-mini"
+        self.model_name = os.getenv("CHAT_MODEL", "gemini-2.5-flash")
         super().__init__(model_name=self.model_name)
 
         # Exchange rate client (Special for Chatbot)
@@ -48,6 +49,18 @@ class AnalystChatbot(RAGBase):
                     self.exchange_client = get_exchange_client()
                 except Exception as e:
                     logger.warning(f"Exchange client init failed: {e}")
+
+        # Tool executor (분리된 모듈)
+        try:
+            from rag.chat_tools import ToolExecutor
+        except ImportError:
+            from src.rag.chat_tools import ToolExecutor
+
+        self.tool_executor = ToolExecutor(
+            finnhub=self.finnhub,
+            exchange_client=self.exchange_client,
+            register_func=self._register_company,
+        )
 
         # Load system prompt with security defense layer
         self.system_prompt = self._load_system_prompt_with_defense()
@@ -127,12 +140,9 @@ class AnalystChatbot(RAGBase):
                 logger.error(f"GraphRAG find_relationships failed: {e}")
         return []
 
-        return []
-
     def _generate_english_search_query(self, user_query: str) -> str:
         """Translate Korean query to English optimized search query using LLM"""
         try:
-            # Simple keyword extraction & translation
             messages = [
                 {
                     "role": "system",
@@ -140,10 +150,7 @@ class AnalystChatbot(RAGBase):
                 },
                 {"role": "user", "content": user_query},
             ]
-            response = self.openai_client.chat.completions.create(
-                model=self.model_name, messages=messages, temperature=0
-            )
-            eng_query = response.choices[0].message.content.strip()
+            eng_query = self._llm_chat(messages, temperature=0, max_tokens=100)
             logger.info(f"🇺🇸 Translated Query: '{user_query}' -> '{eng_query}'")
             return eng_query
         except Exception as e:
@@ -240,25 +247,21 @@ class AnalystChatbot(RAGBase):
     def _extract_tickers(self, query: str) -> List[str]:
         """Extract company tickers from user query using LLM"""
         try:
-            response = self.openai_client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "Extract all company ticker symbols from the query (e.g., AAPL, MSFT, KO). Return them comma-separated. Do NOT extract financial terms like AOCI, EBITDA, GAAP, USD. If none, return NOTHING.",
-                    },
-                    {"role": "user", "content": query},
-                ],
-                max_tokens=20,
-                temperature=0.0,
-            )
-            content = response.choices[0].message.content.strip()
-            if "NOTHING" in content:
+            messages = [
+                {
+                    "role": "system",
+                    "content": "Extract all company ticker symbols from the query (e.g., AAPL, MSFT, KO). Return them comma-separated. Do NOT extract financial terms like AOCI, EBITDA, GAAP, USD. If none, return NOTHING.",
+                },
+                {"role": "user", "content": query},
+            ]
+            content = self._llm_chat(messages, temperature=0.0, max_tokens=30) or ""
+            if not content or "NOTHING" in content:
                 return []
 
             tickers = [
                 t.strip().replace(".", "").replace("'", "").replace('"', "").upper()
                 for t in content.split(",")
+                if t.strip()
             ]
 
             # Validation
@@ -326,21 +329,17 @@ class AnalystChatbot(RAGBase):
 
         # 3. Fallback to LLM
         try:
-            resp = self.openai_client.chat.completions.create(
-                model="gpt-4.1-mini",
-                messages=[
-                    {
-                        "role": "system",
-                        "content": "You are a financial assistant. Return ONLY the stock ticker symbol for the given company name. If unsure, return the input itself.",
-                    },
-                    {
-                        "role": "user",
-                        "content": f"What is the ticker for '{input_text}'?",
-                    },
-                ],
-                max_completion_tokens=10,
-            )
-            return resp.choices[0].message.content.strip()
+            messages = [
+                {
+                    "role": "system",
+                    "content": "You are a financial assistant. Return ONLY the stock ticker symbol for the given company name. If unsure, return the input itself.",
+                },
+                {
+                    "role": "user",
+                    "content": f"What is the ticker for '{input_text}'?",
+                },
+            ]
+            return self._llm_chat(messages, max_tokens=10).strip()
         except Exception:
             return input_text
 
@@ -378,21 +377,17 @@ class AnalystChatbot(RAGBase):
 
             # Generate Korean Name via LLM
             try:
-                trans_resp = self.openai_client.chat.completions.create(
-                    model="gpt-4.1-mini",
-                    messages=[
-                        {
-                            "role": "system",
-                            "content": "You are a translator. Return ONLY the Korean name for the company. No extra text.",
-                        },
-                        {
-                            "role": "user",
-                            "content": f"What is the common Korean name for '{profile.get('name')}' ({ticker})?",
-                        },
-                    ],
-                    max_completion_tokens=20,
-                )
-                korean_name = trans_resp.choices[0].message.content.strip()
+                messages = [
+                    {
+                        "role": "system",
+                        "content": "You are a translator. Return ONLY the Korean name for the company. No extra text.",
+                    },
+                    {
+                        "role": "user",
+                        "content": f"What is the common Korean name for '{profile.get('name')}' ({ticker})?",
+                    },
+                ]
+                korean_name = self._llm_chat(messages, max_tokens=20).strip()
                 data["korean_name"] = korean_name
             except Exception:
                 pass
@@ -405,188 +400,7 @@ class AnalystChatbot(RAGBase):
             logger.error(f"Registration failed: {e}")
             return f"등록 중 오류가 발생했습니다: {str(e)}"
 
-    def _get_financial_data(self, ticker: str) -> str:
-        """Get real-time financial data using Finnhub (Tool)"""
-        if not self.finnhub:
-            return json.dumps({"error": "Finnhub client unavailable"})
-
-        try:
-            data = {}
-            # 1. Quote
-            quote = self.finnhub.get_quote(ticker)
-            if quote:
-                data["price"] = quote.get("c")
-                data["change"] = quote.get("d")
-                data["percent_change"] = quote.get("dp")
-                data["high"] = quote.get("h")
-                data["low"] = quote.get("l")
-
-            # 2. Target Price
-            target = self.finnhub.get_price_target(ticker)
-            if target:
-                data["target_mean"] = target.get("targetMean")
-                data["target_high"] = target.get("targetHigh")
-                data["target_low"] = target.get("targetLow")
-                data["consensus"] = "Unknown"
-
-            # 3. Recommendations
-            recs = self.finnhub.get_recommendation_trends(ticker)
-            if recs:
-                latest = recs[0]
-                data["recommendation"] = {
-                    "strong_buy": latest.get("strongBuy"),
-                    "buy": latest.get("buy"),
-                    "hold": latest.get("hold"),
-                    "sell": latest.get("sell"),
-                    "strong_sell": latest.get("strongSell"),
-                }
-
-            # 4. Recent News
-            news = self.finnhub.get_company_news(ticker)
-            if news:
-                data["recent_news"] = [
-                    {
-                        "headline": n.get("headline"),
-                        "url": n.get("url"),
-                        "summary": n.get("summary"),
-                    }
-                    for n in news[:3]
-                ]
-
-            return json.dumps(data, ensure_ascii=False)
-
-        except Exception as e:
-            logger.error(f"Tool execution failed: {e}")
-            return json.dumps({"error": str(e)})
-
-    def _handle_tool_call(self, tool_call) -> str:
-        """도구 호출(Tool Call)을 실행하고 결과를 반환합니다."""
-        function_name = tool_call.function.name
-        function_args = json.loads(tool_call.function.arguments)
-
-        logger.info(f"Tool Call: {function_name} with {function_args}")
-
-        try:
-            if function_name == "get_stock_quote":
-                res = self.finnhub.get_quote(function_args.get("ticker"))
-                return json.dumps(res, ensure_ascii=False)
-
-            elif function_name == "get_company_profile":
-                res = self.finnhub.get_company_profile(function_args.get("ticker"))
-                return json.dumps(res, ensure_ascii=False)
-
-            elif function_name == "get_price_target":
-                res = self.finnhub.get_price_target(function_args.get("ticker"))
-                return json.dumps(res, ensure_ascii=False)
-
-            elif function_name == "get_company_news":
-                res = self.finnhub.get_company_news(
-                    function_args.get("ticker"),
-                    function_args.get("from_date"),
-                    function_args.get("to"),
-                )
-                return json.dumps(res[:5], ensure_ascii=False)
-
-            elif function_name == "get_market_news":
-                res = self.finnhub.get_market_news(
-                    function_args.get("category", "general")
-                )
-                return json.dumps(res[:5], ensure_ascii=False)
-
-            elif function_name == "register_company":
-                return self._register_company(function_args.get("ticker"))
-
-            elif function_name == "get_exchange_rate":
-                if not self.exchange_client:
-                    return json.dumps({"error": "환율 서비스 비활성화"})
-                from_curr = function_args.get("from_currency", "USD")
-                to_curr = function_args.get("to_currency", "KRW")
-                rate = self.exchange_client.get_rate(from_curr, to_curr)
-                if rate:
-                    return json.dumps(
-                        {
-                            "from": from_curr,
-                            "to": to_curr,
-                            "rate": rate,
-                            "formatted": self.exchange_client.format_rate_for_display(
-                                from_curr, to_curr, rate
-                            ),
-                        },
-                        ensure_ascii=False,
-                    )
-                return json.dumps({"error": "환율 조회 실패"})
-
-            elif function_name == "convert_to_krw":
-                if not self.exchange_client:
-                    return json.dumps({"error": "환율 서비스 비활성화"})
-                usd_amount = function_args.get("usd_amount", 0)
-                krw_amount = self.exchange_client.convert(usd_amount, "USD", "KRW")
-                rate = self.exchange_client.get_rate("USD", "KRW")
-                if krw_amount and rate:
-                    return json.dumps(
-                        {
-                            "usd_amount": usd_amount,
-                            "krw_amount": krw_amount,
-                            "rate": rate,
-                            "formatted": f"${usd_amount:,.2f} = ₩{krw_amount:,.0f} (환율: {rate:,.2f}원/달러)",
-                        },
-                        ensure_ascii=False,
-                    )
-                return json.dumps({"error": "변환 실패"})
-
-            elif function_name == "get_stock_candles":
-                ticker = function_args.get("ticker").upper()
-                resolution = function_args.get("resolution", "D")
-                days = function_args.get("days", 30)
-
-                to_date = datetime.now()
-                from_date = to_date - timedelta(days=days)
-
-                res = self.finnhub.get_candles(ticker, resolution, from_date, to_date)
-                if res and res.get("s") == "ok":
-                    res["ticker"] = ticker
-                    res["resolution"] = resolution
-                    return json.dumps(res, ensure_ascii=False)
-                return json.dumps(
-                    {"error": "주가 데이터를 가져오지 못했습니다."}, ensure_ascii=False
-                )
-
-            elif function_name == "add_to_favorites":
-                try:
-                    try:
-                        from tools.favorites_manager import add_to_favorites_tool
-                    except ImportError:
-                        from src.tools.favorites_manager import add_to_favorites_tool
-
-                    ticker = function_args.get("ticker", "")
-                    return add_to_favorites_tool(ticker)
-                except ImportError as e:
-                    logger.error(f"Failed to import favorites tool: {e}")
-                    return "시스템 오류: 즐겨찾기 모듈을 불러올 수 없습니다."
-                except Exception as e:
-                    return f"오류 발생: {str(e)}"
-
-            elif function_name == "remove_from_favorites":
-                try:
-                    try:
-                        from tools.favorites_manager import remove_from_favorites_tool
-                    except ImportError:
-                        from src.tools.favorites_manager import (
-                            remove_from_favorites_tool,
-                        )
-
-                    ticker = function_args.get("ticker", "")
-                    return remove_from_favorites_tool(ticker)
-                except ImportError as e:
-                    logger.error(f"Failed to import favorites tool: {e}")
-                    return "시스템 오류: 즐겨찾기 모듈을 불러올 수 없습니다."
-                except Exception as e:
-                    return f"오류 발생: {str(e)}"
-
-            return json.dumps({"error": f"Unknown function: {function_name}"})
-        except Exception as e:
-            logger.error(f"Error executing {function_name}: {e}")
-            return json.dumps({"error": f"실행 중 오류: {str(e)}"})
+    # _get_financial_data, _handle_tool_call_unified → chat_tools.ToolExecutor로 이동됨
 
     def chat(
         self, message: str, ticker: Optional[str] = None, use_rag: bool = True
@@ -623,62 +437,91 @@ class AnalystChatbot(RAGBase):
             messages.append({"role": "user", "content": user_content})
 
             # 3. LLM 호출 (1차: 도구 사용 여부 결정)
-            # 3. LLM 호출 (1차: 도구 사용 여부 결정)
-            response = self.openai_client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=tools,
-                tool_choice="auto",
-                max_completion_tokens=2000,
-                response_format={"type": "json_object"},  # JSON 모드 강제
-            )
+            if self.llm_client:
+                llm_result = self.llm_client.chat_completion_with_tools(
+                    messages=messages,
+                    tools=tools,
+                    max_tokens=2000,
+                    json_mode=True,
+                )
+            else:
+                # OpenAI 폴백
+                response = self.openai_client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    tools=tools,
+                    tool_choice="auto",
+                    max_completion_tokens=2000,
+                    response_format={"type": "json_object"},
+                )
+                resp_msg = response.choices[0].message
+                llm_result = {
+                    "content": resp_msg.content,
+                    "tool_calls": (
+                        [
+                            {
+                                "name": tc.function.name,
+                                "arguments": json.loads(tc.function.arguments),
+                                "id": tc.id,
+                            }
+                            for tc in resp_msg.tool_calls
+                        ]
+                        if resp_msg.tool_calls
+                        else None
+                    ),
+                }
 
-            resp_msg = response.choices[0].message
-            tool_calls = resp_msg.tool_calls
+            tool_calls = llm_result.get("tool_calls")
 
             # 4. 도구 호출 처리
-            chart_data = None
+            chart_data = []
             recommendations = []
 
             if tool_calls:
-                messages.append(resp_msg)
-                for tool_call in tool_calls:
-                    result = self._handle_tool_call(tool_call)
+                # 도구 결과를 메시지에 추가
+                messages.append(
+                    {
+                        "role": "assistant",
+                        "content": llm_result.get("content") or "도구를 호출합니다.",
+                    }
+                )
+                for tc in tool_calls:
+                    result = self.tool_executor.execute(tc)
                     messages.append(
                         {
-                            "tool_call_id": tool_call.id,
-                            "role": "tool",
-                            "name": tool_call.function.name,
-                            "content": result,
+                            "role": (
+                                "tool"
+                                if self.llm_client
+                                and self.llm_client.provider != "gemini"
+                                else "user"
+                            ),
+                            "name": tc["name"],
+                            "content": f"[Tool Result: {tc['name']}]\n{result}",
                         }
                     )
 
-                    # 차트 데이터 추출
-                    if tool_call.function.name == "get_stock_candles":
+                    # 차트 데이터 추출 (여러 티커 지원)
+                    if tc["name"] == "get_stock_candles":
                         try:
                             parsed_res = json.loads(result)
                             if "error" not in parsed_res:
-                                chart_data = parsed_res
+                                chart_data.append(parsed_res)
                         except Exception:
                             pass
 
                     # 도구 호출에서 티커가 발견되면 리스트에 추가 (레포트용)
-                    args = json.loads(tool_call.function.arguments)
+                    args = tc.get("arguments", {})
                     if "ticker" in args and not tickers:
                         t = args["ticker"].upper()
                         if len(t) <= 5:
                             tickers.append(t)
 
                 # 2차 LLM 호출 (최종 답변)
-                final_response = self.openai_client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_completion_tokens=2000,
-                    response_format={"type": "json_object"},
+                raw_content = (
+                    self._llm_chat(messages, max_tokens=2000, json_mode=True) or ""
                 )
-                raw_content = final_response.choices[0].message.content
             else:
-                raw_content = resp_msg.content
+                raw_content = llm_result.get("content") or ""
 
             # JSON 파싱 및 최종 메시지 추출
             try:

@@ -1,0 +1,30 @@
+
+[QUERY] Ticker: GOOGL
+Raw Count: 5
+  FY: 2024 | Rev: 350018000000.0 | ID: 0c666fe7-aa8e-41ef-8d8a-14e6fc0f8862
+  FY: 2023 | Rev: 307394000000.0 | ID: 0c666fe7-aa8e-41ef-8d8a-14e6fc0f8862
+  FY: 2022 | Rev: 282836000000.0 | ID: 0c666fe7-aa8e-41ef-8d8a-14e6fc0f8862
+  FY: 2021 | Rev: 257637000000.0 | ID: 0c666fe7-aa8e-41ef-8d8a-14e6fc0f8862
+  FY: 2020 | Rev: 182527000000.0 | ID: 0c666fe7-aa8e-41ef-8d8a-14e6fc0f8862
+
+[QUERY FULL INSPECTOR] Ticker: GOOGL
+First Row (2024) Non-Null Data:
+  id: 72c2b2cc-2801-4a20-a965-01d7337ebcba
+  company_id: 0c666fe7-aa8e-41ef-8d8a-14e6fc0f8862
+  fiscal_year: 2024
+  revenue: 350018000000.0
+  operating_income: 112390000000.0
+  net_income: 100118000000.0
+  eps: 8.13
+  total_assets: 450256000000.0
+  total_liabilities: 125172000000.0
+  stockholders_equity: 325084000000.0
+  operating_cash_flow: 125299000000.0
+  roe: 0.3079757847202569
+  roa: 0.2223579474787676
+  debt_to_equity: 0.3850450960367166
+  created_at: 2026-01-27T05:31:57.464875+00:00
+  updated_at: 2026-01-27T05:31:57.464875+00:00
+
+[QUERY] Ticker: GOOG
+Raw Count: 0

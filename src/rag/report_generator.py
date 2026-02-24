@@ -1,6 +1,6 @@
 """
 Report Generator - 구조화된 투자 분석 레포트 생성
-Uses gpt-4.1-mini
+Uses Gemini 2.5 Flash (or OpenAI fallback)
 """
 
 import os
@@ -17,12 +17,15 @@ PROMPTS_DIR = Path(__file__).parent.parent / "prompts"
 class ReportGenerator(RAGBase):
     """
     투자 분석 레포트 생성기
-    gpt-4.1-mini 사용
+    Gemini 2.5 Flash 사용 (OpenAI fallback)
     """
 
     def __init__(self):
         """Initialize report generator inheriting from RAGBase"""
-        super().__init__(model_name="gpt-4.1-mini")
+        report_model = os.getenv(
+            "REPORT_MODEL", os.getenv("CHAT_MODEL", "gemini-2.5-flash")
+        )
+        super().__init__(model_name=report_model)
 
         # Load system prompt
         self.system_prompt = self._load_prompt("report_generator.txt")
@@ -372,30 +375,19 @@ class ReportGenerator(RAGBase):
 
             # Generate report with selected model
             try:
-                logger.info(f"Sending request to OpenAI model: {self.model}")
-                response = self.openai_client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=3000,
-                )
-                report = response.choices[0].message.content
+                logger.info(f"Generating report with model: {self.model}")
+                report = self._llm_chat(messages, max_tokens=3000)
 
                 if not report:
-                    raise ValueError("Empty response from primary model")
+                    raise ValueError("Empty response from model")
 
             except Exception as e:
-                logger.warning(
-                    f"Primary model {self.model} failed: {e}. Falling back to gpt-4.1-mini"
-                )
-                used_model = "gpt-4.1-mini"
+                logger.warning(f"Model {self.model} failed: {e}. Retrying...")
+                used_model = "fallback"
                 try:
-                    # 2. Try Fallback Model
-                    response = self.openai_client.chat.completions.create(
-                        model=used_model, messages=messages, max_tokens=3000
-                    )
-                    report = response.choices[0].message.content
+                    report = self._llm_chat(messages, max_tokens=3000, temperature=0.2)
                 except Exception as e2:
-                    logger.error(f"Fallback model failed: {e2}")
+                    logger.error(f"Retry failed: {e2}")
                     return f"❌ 레포트 생성 실패: {str(e2)}"
 
             if not report:
@@ -462,30 +454,19 @@ class ReportGenerator(RAGBase):
 
             try:
                 # Generate comparison report
-                logger.info(f"Sending request to OpenAI model: {self.model}")
-                response = self.openai_client.chat.completions.create(
-                    model=self.model,
-                    messages=messages,
-                    max_tokens=4000,
-                )
-                content = response.choices[0].message.content
+                logger.info(f"Generating comparison report with model: {self.model}")
+                content = self._llm_chat(messages, max_tokens=4000)
                 if not content:
-                    raise ValueError("Empty response from primary model")
+                    raise ValueError("Empty response from model")
                 return content
 
             except Exception as e:
-                logger.warning(
-                    f"Primary model {self.model} failed: {e}. Falling back to gpt-4.1-mini"
-                )
+                logger.warning(f"Model {self.model} failed: {e}. Retrying...")
                 try:
-                    # 2. Try Fallback Model
-                    response = self.openai_client.chat.completions.create(
-                        model="gpt-4.1-mini", messages=messages, max_tokens=4000
-                    )
-                    content = response.choices[0].message.content
+                    content = self._llm_chat(messages, max_tokens=4000, temperature=0.2)
                     if not content:
                         return "❌ 비교 보고서 생성 실패: 모델로부터 내용을 받아오지 못했습니다."
-                    return f"⚠️ [Fallback Model: gpt-4.1-mini]\n\n{content}"
+                    return content
                 except Exception as e2:
                     return f"❌ 비교 보고서 생성 실패: {str(e2)}"
 

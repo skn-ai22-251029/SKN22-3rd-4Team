@@ -17,17 +17,17 @@ graph TD
         UI -->|Manage Favorites| Watchlistmgr[⭐ Watchlist Manager]
     end
 
-    subgraph Data & State
+    subgraph "Data & State"
         Auth <-->|Verify| UserDB[(👥 Users Table)]
         Watchlistmgr <-->|Sync| UserDB
     end
 
     subgraph RAG Engine
-        Validator -->|Valid Query| Agent[🤖 LangChain Agent]
+        Validator -->|Valid Query| Agent[🤖 LLM Client]
         ReportGen -->|Data Fetch| Retriever[🔍 Data Retriever]
         
-        Agent <-->|Vector Search| VectorDB[(🗄️ Supabase Vector)]
-        Agent <-->|Graph Search| GraphDB[(🕸️ GraphRAG)]
+        Agent <-->|Vector Search| VectorDB[(🗄️ Supabase pgvector)]
+        Agent <-->|Graph Search| GraphDB[(🕸️ Neo4j GraphDB)]
         
         Retriever -->|Parallel Fetch| VectorDB
         Retriever -->|Parallel Fetch| GraphDB
@@ -40,9 +40,10 @@ graph TD
         VectorDB <-->|Sync| SEC[📄 SEC 10-K]
     end
 
-    Retriever -->|Aggregated Context| LLM[🧠 GPT-4.1-mini]
+    Retriever -->|Aggregated Context| LLM[🧠 GPT-4.1-mini / Gemini]
     Agent -->|Final Answer| LLM
     LLM -->|Response| UI
+    LLM -.->|Tracing| LS[📊 LangSmith]
 ```
 
 ### 1. Frontend (User Interface)
@@ -55,14 +56,17 @@ graph TD
 ### 2. Backend & AI Engine
 - **RAG Engine**:
   - **Vector Store**: 텍스트 의미 검색 (Semantic Search)
-  - **GraphRAG**: `NetworkX` 기반의 기업 관계망 분석 (중심성, 최단 경로 탐색)
+  - **GraphRAG**: **Neo4j** Cypher 쿼리 + `NetworkX` 기반 기업 관계망 분석
   - **Hybrid Retrieval**: 벡터 검색 결과와 그래프 분석 결과를 결합하여 답변 생성
-- **LLM**: OpenAI GPT-4.1-mini (답변 생성 및 도구 호출)
+- **LLM**: GPT-4.1-mini 기본 / Gemini 2.5 Flash 선택적 (`.env`로 전환)
+- **LLM Client**: `llm_client.py` — Gemini/OpenAI 통합 추상화 레이어
+- **LangSmith**: LLM 콜 트레이싱 및 모니터링 (선택적)
 
 ### 3. Database & Infrastructure
 - **Supabase (PostgreSQL)**:
   - `pgvector`: 벡터 임베딩 저장 및 검색
   - `Relational Tables`: 기업 정보, 사용자 정보, 관계 데이터 관리
+- **Neo4j**: 기업 관계망 그래프 DB (614노드, 212관계)
 - **Authentication**: Supabase Auth
 
 ## 🔄 데이터 흐름 (Data Flow)
@@ -88,24 +92,24 @@ graph TD
     subgraph "1. 데이터 추출 (Ingestion)"
         A[Original Text / 10-K] --> B{LLM 관계 추출}
         B -- "추출" --> C(JSON: Source-Target-Relationship)
-        C -- "저장" --> D[(Supabase: company_relationships)]
+        C -- "저장" --> D[(Neo4j + Supabase)]
     end
 
     subgraph "2. 네트워크 구축 (Graph Building)"
-        D --> E[NetworkX 로컬 그래프 생성]
+        D --> E[Neo4j Cypher 쿼리 / NetworkX 분석]
         E --> F[Nodes: 기업/브랜드]
         E --> G[Edges: 파트너, 경쟁사, 자회사 등]
     end
 
     subgraph "3. 지능형 검색 (Query)"
-        H[사용자 질문: '애플의 공급망 분석'] --> I{그래프 탐색}
-        I --> J[1/2단계 인접 노드 탐색]
-        J --> K[중심성 분석 / 최단 경로 계산]
+        H[사용자 질문] --> I{그래프 탐색}
+        I --> J[Neo4j 관계 쿼리 + 중심성 분석]
+        J --> K[최단 경로 / 네트워크 분석]
         K --> L[그래프 컨텍스트 생성]
     end
 
     subgraph "4. 인사이트 생성"
-        L --> M{Analyst LLM}
+        L --> M{GPT-4.1-mini / Gemini}
         M --> N[입체적 투자 인사이트 답변]
     end
 ```
@@ -119,50 +123,32 @@ graph TD
 
 ## 🛠️ 기술 스택 (Tech Stack)
 - **Language**: Python 3.10+
-- **Graph Library**: NetworkX
-- **Key Libraries**: `openai`, `supabase`, `pandas`, `streamlit`
+- **LLM**: GPT-4.1-mini (기본) / Gemini 2.5 Flash (선택)
+- **Graph DB**: Neo4j (Cypher) + NetworkX (분석)
+- **Vector DB**: Supabase pgvector
+- **Tracing**: LangSmith (선택적)
+- **Key Libraries**: `google-generativeai`, `openai`, `neo4j`, `supabase`, `networkx`, `streamlit`
 
 ## 📂 프로젝트 구조 (Directory Structure)
 
 ```bash
 SKN22-3rd-4Team/
-├── .streamlit/                 # Streamlit 설정
-│   └── secrets.toml            # API 키 및 환경 변수
-├── logs/                       # 로그 파일 저장소
 ├── scripts/                    # 유틸리티 및 배치 스크립트
-│   ├── build_company_relationships.py  # [ETL] 기업 관계 추출 및 그래프 구축 (병렬 처리 지원)
-│   ├── collect_10k_relationships.py    # (Legacy) 10-K 기반 관계 추출
-│   └── upload_to_supabase.py           # 초기 데이터 업로드
-├── src/                        # 애플리케이션 핵심 소스 코드
-│   ├── core/                   # 코어 비즈니스 로직
-│   │   ├── chat_connector.py   # 채팅 세션 및 UI 연결 관리
-│   │   └── utils.py            # 공통 유틸리티
-│   ├── data/                   # 데이터 관리
-│   │   ├── stock_api_client.py # Finnhub/FMP 주식 데이터 API 클라이언트
-│   │   └── supabase_client.py  # Supabase DB 클라이언트 (PostgreSQL/pgvector)
-│   ├── rag/                    # RAG (Retrieval-Augmented Generation) 엔진
-│   │   ├── analyst_chat.py     # 금융 분석가 챗봇 비즈니스 로직
-│   │   ├── chat_tools.py       # OpenAI Function Calling 도구 정의
-│   │   ├── graph_rag.py        # [CORE] NetworkX 기반 그래프 분석 및 RAG 엔진
-│   │   ├── rag_base.py         # RAG 기본 클래스
-│   │   └── vector_store.py     # 벡터 검색 (Vector Search) 관리
-│   ├── tools/                  # 도구 및 헬퍼
-│   │   ├── exchange_rate_client.py # 환율 정보
-│   │   └── favorites_manager.py    # 관심 기업 관리
-│   └── ui/                     # UI 컴포넌트 (Streamlit)
-│       ├── components/         # 재사용 가능한 UI 컴포넌트
-│       ├── helpers/            # UI 헬퍼 함수
-│       │   ├── chart_helpers.py
-│       │   ├── chat_helpers.py
-│       │   ├── home_dashboard.py
-│       │   ├── insights_helper.py
-│       │   └── sidebar_manager.py
-│       └── pages/              # 페이지별 UI
-│           ├── home.py
-│           ├── insights.py     # [MAIN] 채팅 기반 인사이트 페이지
-│           ├── login_page.py
-│           └── report_page.py
-├── app.py                      # 메인 애플리케이션 진입점
-├── requirements.txt            # 의존성 패키지 목록
-└── STRUCTURE.md                # 프로젝트 구조 문서 (현재 파일)
+│   ├── build_company_relationships.py  # [ETL] 기업 관계 추출
+│   └── migrate_to_neo4j.py            # Supabase → Neo4j 마이그레이션
+├── src/
+│   ├── core/                   # 코어 로직 (Validator, ChatConnector)
+│   ├── data/                   # 데이터 클라이언트 (Finnhub, Supabase)
+│   ├── rag/                    # RAG 엔진
+│   │   ├── analyst_chat.py     # 챗봇 비즈니스 로직
+│   │   ├── chat_tools.py       # 도구 정의 + ToolExecutor
+│   │   ├── graph_rag.py        # [CORE] Neo4j + NetworkX 그래프 분석
+│   │   ├── llm_client.py       # [NEW] 통합 LLM Client (Gemini/OpenAI)
+│   │   ├── rag_base.py         # RAG 기본 클래스 (LangSmith 트레이싱)
+│   │   └── vector_store.py     # 벡터 검색
+│   ├── tools/                  # 환율, 즐겨찾기 등
+│   └── ui/                     # Streamlit 페이지 및 헬퍼
+├── app.py                      # 메인 애플리케이션
+├── .env                        # 환경 변수 (Gemini, OpenAI, Neo4j 등)
+└── requirements.txt            # 의존성 패키지
 ```
